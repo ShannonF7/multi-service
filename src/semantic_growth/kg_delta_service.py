@@ -444,126 +444,176 @@ def persist_kg_deltas(
             # UPDATE/DEPRECATE are explicit operations, not automatically a
             # contradiction. They remain reviewable PENDING candidates.
             status = "INVALIDATED" if malformed_reason else ("CONFLICT" if operation == "CONFLICT" else "PENDING")
-            row = db.execute(
+            existing_candidate_id = db.execute(
                 text(
                     """
-                    insert into semantic_claim_candidates (
-                        candidate_uid, trace_id, run_id, source_scenic_id, source_node_id,
-                        subject_name, subject_type, graph_scope, retrieval_source,
-                        claim_id, claim_type, candidate_type, predicate, object_value,
-                        object_name, object_type, target_source_node_id, source_id,
-                        source_title, source_url, quote, confidence, evidence_score,
-                        evidence_status, status, evidence_ids, recommend_score, support_status,
-                        candidate_group_key, value_group_key, conflict_class, gap_status,
-                        provenance_type, retrieval_method, target_node_id,
-                        target_node_candidate_id, entity_resolution_status, possible_nodes,
-                        raw_type, suggested_type, type_confidence, risk_level,
-                        publication_policy, score_components, conflict_key, conflict_group,
-                        raw_payload, metadata, update_operation, aggregation_key,
-                        independent_source_count, canonical_claim_key, conflict_scope_key,
-                        trust_version, trust_components, final_trust_score, updated_at
-                    ) values (
-                        :candidate_uid, :trace_id, :run_id, :sid, :source_node_id,
-                        :subject_name, :subject_type, 'evidence_unit', 'provided_evidence',
-                        :claim_id, :claim_type, :candidate_type, :predicate, :object_value,
-                        :object_name, :object_type, :target_source_node_id, :source_id,
-                        :source_title, :source_url, :quote, :confidence, :evidence_score,
-                        :evidence_status, :status, '[]'::jsonb, :recommend_score, :support_status,
-                        :candidate_group_key, :value_group_key, :conflict_class, 'pending_review',
-                        'growth_evidence_unit', 'open_discovery', :target_node_id,
-                        :target_node_candidate_id, :entity_resolution_status, cast(:possible_nodes as jsonb),
-                        :raw_type, :suggested_type, :type_confidence, :risk_level,
-                        'MANUAL_REVIEW', cast(:score_components as jsonb), :conflict_key, :conflict_group,
-                        cast(:raw_payload as jsonb), cast(:metadata as jsonb), :update_operation,
-                        :aggregation_key, :independent_source_count, :canonical_claim_key,
-                        :conflict_scope_key, :trust_version, cast(:trust_components as jsonb),
-                        :final_trust_score, now()
-                    ) on conflict (candidate_uid) do update set
-                        confidence=greatest(semantic_claim_candidates.confidence, excluded.confidence),
-                        evidence_score=greatest(semantic_claim_candidates.evidence_score, excluded.evidence_score),
-                        metadata=semantic_claim_candidates.metadata || excluded.metadata,
-                        update_operation=excluded.update_operation,
-                        aggregation_key=excluded.aggregation_key,
-                        canonical_claim_key=excluded.canonical_claim_key,
-                        conflict_scope_key=excluded.conflict_scope_key,
-                        trust_version=excluded.trust_version,
-                        trust_components=semantic_claim_candidates.trust_components || excluded.trust_components,
-                        final_trust_score=greatest(
-                            coalesce(semantic_claim_candidates.final_trust_score, 0),
-                            coalesce(excluded.final_trust_score, 0)
-                        ),
-                        independent_source_count=greatest(semantic_claim_candidates.independent_source_count, excluded.independent_source_count),
-                        status=case when semantic_claim_candidates.status in ('ADOPTED','PUBLISHED','REJECTED','INVALIDATED')
-                                    then semantic_claim_candidates.status else excluded.status end,
-                        updated_at=now()
-                    returning id
+                    select id
+                    from semantic_claim_candidates
+                    where source_scenic_id=:sid
+                      and canonical_claim_key=:canonical_claim_key
+                      and upper(coalesce(status, 'PENDING')) not in ('ADOPTED','PUBLISHED','REJECTED','INVALIDATED')
+                    order by id
+                    limit 1
                     """
                 ),
                 {
-                    "candidate_uid": candidate_uid,
-                    "trace_id": f"{growth_run_id}:open:{item['aggregation_key'][:12]}",
-                    "run_id": growth_run_id,
                     "sid": str(source_scenic_id),
-                    "source_node_id": source_node_id,
-                    "subject_name": item["subject_text"],
-                    "subject_type": item.get("subject_type") or subject.get("node_type") or None,
-                    "claim_id": f"open-{item['aggregation_key'][:16]}",
-                    "claim_type": item["claim_type"],
-                    "candidate_type": "discovered_entity" if operation == "MINT_ADD" else "discovered_fact",
-                    "predicate": item["canonical_predicate"],
-                    "object_value": item["object_text"] if item["claim_type"] == "property" else None,
-                    "object_name": item["object_text"] if item["claim_type"] == "relation" else None,
-                    "object_type": item.get("object_type") or target.get("node_type") or None,
-                    "target_source_node_id": target.get("node_id"),
-                    "source_id": unit["evidence_unit_uid"],
-                    "source_title": unit.get("source_title"),
-                    "source_url": unit.get("source_url"),
-                    "quote": item["quote"],
-                    "confidence": float(item.get("confidence") or 0.0),
-                    "evidence_score": float(item.get("confidence") or 0.0) * float(unit.get("source_authority") or 0.5),
-                    "evidence_status": "LOW_EVIDENCE" if image_only else "SUPPORTED",
-                    "support_status": "weak" if image_only else "supported",
-                    "status": status,
-                    "recommend_score": trust_components["semantic_trust_score"],
-                    "candidate_group_key": candidate_group_key,
-                    "value_group_key": value_group_key,
-                    "conflict_class": "conflicting" if status == "CONFLICT" else None,
-                    "target_node_id": target.get("node_id"),
-                    "target_node_candidate_id": target.get("node_candidate_id"),
-                    "entity_resolution_status": target.get("status") if item["claim_type"] == "relation" else subject.get("status"),
-                    "possible_nodes": json.dumps((target or subject).get("possible_nodes") or [], ensure_ascii=False),
-                    "raw_type": item.get("object_type") or None,
-                    "suggested_type": target.get("node_type") or item.get("object_type") or None,
-                    "type_confidence": float(item.get("confidence") or 0.0),
-                    "risk_level": "HIGH" if image_only or status == "CONFLICT" or operation == "MINT_ADD" or trust_components["semantic_trust_score"] < 0.55 else ("MEDIUM" if trust_components["semantic_trust_score"] < 0.75 else "LOW"),
-                    "score_components": json.dumps(
-                        {
-                            **trust_components,
-                            "source_count": float(item["independent_source_count"]),
-                        },
-                        ensure_ascii=False,
-                    ),
-                    "conflict_key": candidate_group_key,
-                    "conflict_group": candidate_group_key if status == "CONFLICT" else None,
-                    "raw_payload": json.dumps(
-                        {
-                            "raw_claim_ids": item["raw_claim_ids"],
-                            "raw_predicates": metadata["raw_predicates"],
-                            "temporal_role": item.get("temporal_role"),
-                        },
-                        ensure_ascii=False,
-                    ),
-                    "metadata": json.dumps(metadata, ensure_ascii=False),
-                    "update_operation": operation,
-                    "aggregation_key": item["aggregation_key"],
                     "canonical_claim_key": item.get("canonical_claim_key") or item["aggregation_key"],
-                    "conflict_scope_key": item.get("conflict_scope_key") or candidate_group_key,
-                    "trust_version": "trust-v1",
-                    "trust_components": json.dumps(trust_components, ensure_ascii=False),
-                    "final_trust_score": float(trust_components["semantic_trust_score"]),
-                    "independent_source_count": int(item["independent_source_count"]),
                 },
-            ).mappings().one()
+            ).scalar()
+            if existing_candidate_id:
+                db.execute(
+                    text(
+                        """
+                        update semantic_claim_candidates
+                        set confidence=greatest(confidence, :confidence),
+                            evidence_score=greatest(evidence_score, :evidence_score),
+                            metadata=coalesce(metadata, '{}'::jsonb) || cast(:metadata as jsonb),
+                            canonical_claim_key=:canonical_claim_key,
+                            conflict_scope_key=:conflict_scope_key,
+                            trust_version=:trust_version,
+                            trust_components=coalesce(trust_components, '{}'::jsonb) || cast(:trust_components as jsonb),
+                            final_trust_score=greatest(coalesce(final_trust_score, 0), :final_trust_score),
+                            independent_source_count=greatest(independent_source_count, :independent_source_count),
+                            updated_at=now()
+                        where id=:id
+                        """
+                    ),
+                    {
+                        "id": int(existing_candidate_id),
+                        "confidence": float(item.get("confidence") or 0.0),
+                        "evidence_score": float(item.get("confidence") or 0.0) * float(unit.get("source_authority") or 0.5),
+                        "metadata": json.dumps(metadata, ensure_ascii=False),
+                        "canonical_claim_key": item.get("canonical_claim_key") or item["aggregation_key"],
+                        "conflict_scope_key": item.get("conflict_scope_key") or candidate_group_key,
+                        "trust_version": "trust-v1",
+                        "trust_components": json.dumps(trust_components, ensure_ascii=False),
+                        "final_trust_score": float(trust_components["semantic_trust_score"]),
+                        "independent_source_count": int(item["independent_source_count"]),
+                    },
+                )
+                row = {"id": int(existing_candidate_id)}
+            else:
+                row = db.execute(
+                    text(
+                        """
+                        insert into semantic_claim_candidates (
+                            candidate_uid, trace_id, run_id, source_scenic_id, source_node_id,
+                            subject_name, subject_type, graph_scope, retrieval_source,
+                            claim_id, claim_type, candidate_type, predicate, object_value,
+                            object_name, object_type, target_source_node_id, source_id,
+                            source_title, source_url, quote, confidence, evidence_score,
+                            evidence_status, status, evidence_ids, recommend_score, support_status,
+                            candidate_group_key, value_group_key, conflict_class, gap_status,
+                            provenance_type, retrieval_method, target_node_id,
+                            target_node_candidate_id, entity_resolution_status, possible_nodes,
+                            raw_type, suggested_type, type_confidence, risk_level,
+                            publication_policy, score_components, conflict_key, conflict_group,
+                            raw_payload, metadata, update_operation, aggregation_key,
+                            independent_source_count, canonical_claim_key, conflict_scope_key,
+                            trust_version, trust_components, final_trust_score, updated_at
+                        ) values (
+                            :candidate_uid, :trace_id, :run_id, :sid, :source_node_id,
+                            :subject_name, :subject_type, 'evidence_unit', 'provided_evidence',
+                            :claim_id, :claim_type, :candidate_type, :predicate, :object_value,
+                            :object_name, :object_type, :target_source_node_id, :source_id,
+                            :source_title, :source_url, :quote, :confidence, :evidence_score,
+                            :evidence_status, :status, '[]'::jsonb, :recommend_score, :support_status,
+                            :candidate_group_key, :value_group_key, :conflict_class, 'pending_review',
+                            'growth_evidence_unit', 'open_discovery', :target_node_id,
+                            :target_node_candidate_id, :entity_resolution_status, cast(:possible_nodes as jsonb),
+                            :raw_type, :suggested_type, :type_confidence, :risk_level,
+                            'MANUAL_REVIEW', cast(:score_components as jsonb), :conflict_key, :conflict_group,
+                            cast(:raw_payload as jsonb), cast(:metadata as jsonb), :update_operation,
+                            :aggregation_key, :independent_source_count, :canonical_claim_key,
+                            :conflict_scope_key, :trust_version, cast(:trust_components as jsonb),
+                            :final_trust_score, now()
+                        ) on conflict (candidate_uid) do update set
+                            confidence=greatest(semantic_claim_candidates.confidence, excluded.confidence),
+                            evidence_score=greatest(semantic_claim_candidates.evidence_score, excluded.evidence_score),
+                            metadata=semantic_claim_candidates.metadata || excluded.metadata,
+                            update_operation=excluded.update_operation,
+                            aggregation_key=excluded.aggregation_key,
+                            canonical_claim_key=excluded.canonical_claim_key,
+                            conflict_scope_key=excluded.conflict_scope_key,
+                            trust_version=excluded.trust_version,
+                            trust_components=semantic_claim_candidates.trust_components || excluded.trust_components,
+                            final_trust_score=greatest(
+                                coalesce(semantic_claim_candidates.final_trust_score, 0),
+                                coalesce(excluded.final_trust_score, 0)
+                            ),
+                            independent_source_count=greatest(semantic_claim_candidates.independent_source_count, excluded.independent_source_count),
+                            status=case when semantic_claim_candidates.status in ('ADOPTED','PUBLISHED','REJECTED','INVALIDATED')
+                                        then semantic_claim_candidates.status else excluded.status end,
+                            updated_at=now()
+                        returning id
+                        """
+                    ),
+                    {
+                        "candidate_uid": candidate_uid,
+                        "trace_id": f"{growth_run_id}:open:{item['aggregation_key'][:12]}",
+                        "run_id": growth_run_id,
+                        "sid": str(source_scenic_id),
+                        "source_node_id": source_node_id,
+                        "subject_name": item["subject_text"],
+                        "subject_type": item.get("subject_type") or subject.get("node_type") or None,
+                        "claim_id": f"open-{item['aggregation_key'][:16]}",
+                        "claim_type": item["claim_type"],
+                        "candidate_type": "discovered_entity" if operation == "MINT_ADD" else "discovered_fact",
+                        "predicate": item["canonical_predicate"],
+                        "object_value": item["object_text"] if item["claim_type"] == "property" else None,
+                        "object_name": item["object_text"] if item["claim_type"] == "relation" else None,
+                        "object_type": item.get("object_type") or target.get("node_type") or None,
+                        "target_source_node_id": target.get("node_id"),
+                        "source_id": unit["evidence_unit_uid"],
+                        "source_title": unit.get("source_title"),
+                        "source_url": unit.get("source_url"),
+                        "quote": item["quote"],
+                        "confidence": float(item.get("confidence") or 0.0),
+                        "evidence_score": float(item.get("confidence") or 0.0) * float(unit.get("source_authority") or 0.5),
+                        "evidence_status": "LOW_EVIDENCE" if image_only else "SUPPORTED",
+                        "support_status": "weak" if image_only else "supported",
+                        "status": status,
+                        "recommend_score": trust_components["semantic_trust_score"],
+                        "candidate_group_key": candidate_group_key,
+                        "value_group_key": value_group_key,
+                        "conflict_class": "conflicting" if status == "CONFLICT" else None,
+                        "target_node_id": target.get("node_id"),
+                        "target_node_candidate_id": target.get("node_candidate_id"),
+                        "entity_resolution_status": target.get("status") if item["claim_type"] == "relation" else subject.get("status"),
+                        "possible_nodes": json.dumps((target or subject).get("possible_nodes") or [], ensure_ascii=False),
+                        "raw_type": item.get("object_type") or None,
+                        "suggested_type": target.get("node_type") or item.get("object_type") or None,
+                        "type_confidence": float(item.get("confidence") or 0.0),
+                        "risk_level": "HIGH" if image_only or status == "CONFLICT" or operation == "MINT_ADD" or trust_components["semantic_trust_score"] < 0.55 else ("MEDIUM" if trust_components["semantic_trust_score"] < 0.75 else "LOW"),
+                        "score_components": json.dumps(
+                            {
+                                **trust_components,
+                                "source_count": float(item["independent_source_count"]),
+                            },
+                            ensure_ascii=False,
+                        ),
+                        "conflict_key": candidate_group_key,
+                        "conflict_group": candidate_group_key if status == "CONFLICT" else None,
+                        "raw_payload": json.dumps(
+                            {
+                                "raw_claim_ids": item["raw_claim_ids"],
+                                "raw_predicates": metadata["raw_predicates"],
+                                "temporal_role": item.get("temporal_role"),
+                            },
+                            ensure_ascii=False,
+                        ),
+                        "metadata": json.dumps(metadata, ensure_ascii=False),
+                        "update_operation": operation,
+                        "aggregation_key": item["aggregation_key"],
+                        "canonical_claim_key": item.get("canonical_claim_key") or item["aggregation_key"],
+                        "conflict_scope_key": item.get("conflict_scope_key") or candidate_group_key,
+                        "trust_version": "trust-v1",
+                        "trust_components": json.dumps(trust_components, ensure_ascii=False),
+                        "final_trust_score": float(trust_components["semantic_trust_score"]),
+                        "independent_source_count": int(item["independent_source_count"]),
+                    },
+                ).mappings().one()
             candidate_id = int(row["id"])
             candidate_ids.append(candidate_id)
             for support in item["supporting_claims"]:
