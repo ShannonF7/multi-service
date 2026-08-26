@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from src.rag.service import graph_discovery_service as service
+
+
+class FakeResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def single(self):
+        return self.rows[0] if self.rows else None
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class FakeSession:
+    def __init__(self, handler):
+        self.handler = handler
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def run(self, query, **params):
+        self.calls.append((query, params))
+        return FakeResult(self.handler(query, params))
+
+
+class FakeDriver:
+    def __init__(self, session):
+        self.session_value = session
+
+    def session(self, **_kwargs):
+        return self.session_value
+
+
+def test_search_published_entities_returns_ranked_page(monkeypatch):
+    def handler(query, params):
+        if "count(node) AS total" in query:
+            return [{"total": 3}]
+        return [
+            {"item": {"node_id": "10", "name": "Alpha", "node_type": "poi", "degree": 4, "match_score": 100}},
+            {"item": {"node_id": "11", "name": "Alpha Hall", "node_type": "building", "degree": 2, "match_score": 80}},
+        ]
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.search_published_entities("4", "Alpha", limit=2, offset=0)
+
+    assert result["total"] == 3
+    assert result["has_more"] is True
+    assert [item["node_id"] for item in result["items"]] == ["10", "11"]
+    page_call = next(call for call in session.calls if "SKIP $offset" in call[0])
+    assert page_call[1]["query"] == "alpha"
+    assert page_call[1]["limit"] == 2
+
+
+def test_neighborhood_supports_offset_and_total(monkeypatch):
+    def handler(query, params):
+        if "OPTIONAL MATCH (root)-[:HAS_FACT]" in query:
+            return [{"root": {"node_id": "10", "name": "Root"}, "facts": []}]
+        if "WITH DISTINCT neighbor" in query:
+            return [{"total": 5}]
+        if "RETURN collect(neighbor" in query:
+            return [{"neighbors": [
+                {"node_id": "12", "name": "Second", "graph_depth": 1},
+                {"node_id": "13", "name": "Third", "graph_depth": 2},
+            ]}]
+        if "RETURN source.node_id AS source_node_id" in query:
+            return []
+        raise AssertionError(query)
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.get_published_neighborhood("4", "10", depth=2, limit=2, offset=1)
+
+    assert result["found"] is True
+    assert result["total"] == 5
+    assert result["offset"] == 1
+    assert result["limit"] == 2
+    assert result["has_more"] is True
+    page_call = next(call for call in session.calls if "SKIP $offset" in call[0])
+    assert page_call[1]["offset"] == 1

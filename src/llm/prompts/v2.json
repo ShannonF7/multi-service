@@ -1,0 +1,423 @@
+{
+    "system_config": {
+        "script_metadata": {
+            "script_id": "ZBGB_V2_001",
+            "title": "张壁：星野藏甲",
+            "version": "2.0.0",
+            "style": "历史沉浸，解谜探索",
+            "recommended_group_size": "4-6人",
+            "era_background": "受现代天工院委托，文明回溯者进入古堡，修复断裂的历史记忆。见证一支军队如何从“蛰伏”走向“守护”。"
+        },
+        "data_model_notes": "基于标准V2格式重组 + tell剧情融合。"
+    },
+    "four_deities_collection": {
+        "mechanism": "寻找全城唯一的“铁骨”孤证，沿着星宿轨迹入城，完成三座戏台的秘密任务，见证铁骨化魂。",
+        "final_action": "在棋院破译‘气生道成’，感悟张壁守护之道。"
+    },
+    "tasks": [
+        {
+            "task_id": "T01_PROLOGUE",
+            "stage_name": "序章：城外哨兵 · 唯一的铁证",
+            "location": "关帝庙（南堡门外一楼）",
+            "target_location_coordinate": {
+                "latitude": 36.96195,
+                "longitude": 111.97355
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "在关帝庙寻找线索。请回答：这尊看似普通的泥塑神像，其实体内部隐藏着什么材质？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "线索1",
+                "item_description": "台上演的是关公的忠义，台下站的是身披泥甲的铁哨兵。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T02_ACT1_KUI_STAR",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T01_01",
+                        "content": "神像名为拜神，实为“哨兵”，内部包裹着融化的玄铁重甲。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    },
+                    {
+                        "id": "F_T01_TELL",
+                        "content": "屋檐铜铃清脆如金戈撞击。守岁人讲述张壁古堡的起源：统帅下令‘全员卸甲，化兵为民’，将最后一副玄铁重甲融化为底，外包泥塑，塑成神像立于城外，名为拜神，实为‘哨兵’。泥为和平伪装，铁为战争记忆，一旦泥胎震动，铁骨共鸣，预示敌袭。这正是张壁‘外圆（泥）内方（铁）’的核心秘密。",
+                        "use_scope": [
+                            "STORY_TELL"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "hints": [
+                    {
+                        "id": "H_T01_01",
+                        "content": "注意守岁人提到的“外圆内方”和“泥包铁”。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "answers": [
+                    "铁",
+                    "玄铁",
+                    "重甲",
+                    "铁甲"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T02_ACT1_KUI_STAR",
+            "stage_name": "第一幕：高台观阵 · 奎星行军",
+            "location": "魁星楼（南堡门二楼）",
+            "target_location_coordinate": {
+                "latitude": 36.96191,
+                "longitude": 111.97358
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "登上魁星楼俯瞰古堡。任务：【星阵对位】。魁星楼下用今法（望远镜）观古星，你发现了什么异常的人影？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "STORY_UNLOCK",
+                "item_name": "行军阵真相已破。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T03_ACT2_FACELESS",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T02_TELL",
+                        "content": "守岁人引导众人登楼入城，讲述张壁古堡对应天上奎宿星阵，形如行军之人。古堡并非普通村落，而是一座‘行军阵’：弯曲巷道使军队化整为零融入民居，却始终保持行进态势，同时形成巷战天然防御体系。",
+                        "use_scope": [
+                            "STORY_TELL"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "hints": [],
+                "answers": [
+                    "我看到了一个拿着望远镜的古人"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T03_ACT2_FACELESS",
+            "stage_name": "第二幕：无面统帅 · 隐忍守望",
+            "location": "可罕庙",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "在可罕庙寻找第二座戏台。请回答：你在庙内看到了什么建筑？面对无面统帅，你会选择留名还是无名？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "线索2",
+                "item_description": "台上的角儿都有名有姓，台下的真英雄却是个哑巴。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T04_ACT3_TUNNEL",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T03_TELL",
+                        "content": "守岁人讲述无面统帅的选择：可罕王抹去自己的名字与面目，只为保全全城兄弟性命。城外‘泥包铁’一旦暴露即是谋反大罪，因此他选择成为无名氏，坐在戏台下，看尽帝王将相悲欢，自身却做一个哑巴。屋檐木铎声寓意命令：隐忍，将秘密烂在肚子里。",
+                        "use_scope": [
+                            "STORY_TELL"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "hints": [],
+                "answers": [
+                    "我在可罕庙看到了一座戏台",
+                    "无名"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T04_ACT3_TUNNEL",
+            "stage_name": "第三幕：地隐星微 · 绝境退路",
+            "location": "地道",
+            "target_location_coordinate": {
+                "latitude": 36.961943,
+                "longitude": 111.973174
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "深入地道。请回答：在阴暗的地道内，你看到了什么能证明这里曾是长期驻军场所的设施？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "STORY_UNLOCK",
+                "item_name": "找到生路。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T05_ACT4_DRAGON_CRANE",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T04_TELL",
+                        "content": "守岁人讲述地下系统的意义：当地面防御失效，统帅留下最后一步棋——地下兵营。每一个马槽、指挥洞、通气孔都证明此处为长期驻军系统。这里没有身份与铃声，只有生存本能，是最后的生路。",
+                        "use_scope": [
+                            "STORY_TELL"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "hints": [
+                    {
+                        "id": "H_T04_01",
+                        "content": "寻找马匹生活的地方。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "answers": [
+                    "我看到了马厩",
+                    "马槽",
+                    "指挥部"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T05_ACT4_DRAGON_CRANE",
+            "stage_name": "第四幕：时空交错 · 龙鹤祈愿",
+            "location": "龙鹤福照壁",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "观察照壁。请指出：照壁上的“龙”和“鹤”分别隐藏在“福”字的哪个部位？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "STORY_UNLOCK",
+                "item_name": "先辈的苦心，后人收到了。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T06_ACT5_CENTRAL_EARTH",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [
+                    "龙在福的左偏旁上，鹤在福的右半部分"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T06_ACT5_CENTRAL_EARTH",
+            "stage_name": "第五幕：中宫定数 · 岁月流转",
+            "location": "中央戊己土",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "观察大型节气日晷。请问根据当前的时间，距离今日最近的节气是什么？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "STORY_UNLOCK",
+                "item_name": "时间流转，杀气已消。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T07_ACT6_COEXISTENCE",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [
+                    "小寒"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T07_ACT6_COEXISTENCE",
+            "stage_name": "第六幕：枯荣共生 · 铁骨化魂",
+            "location": "槐抱柳",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "在槐抱柳树下感悟共生精神。请描述你们团队在这里为了体现“守护”而摆出的姿势关键词是什么？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "STORY_UNLOCK",
+                "item_name": "枯木逢春，生死相依。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T08_ACT7_ALLIANCE",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [
+                    "守护",
+                    "拥抱",
+                    "合影完成"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T08_ACT7_ALLIANCE",
+            "stage_name": "第七幕：乱世同盟 · 实用求生",
+            "location": "神庙群",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "寻找信仰混杂的证据。请指出殿内的一处具体的“融合点”或“违和点”，以及第三座戏台的位置。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "线索3",
+                "item_description": "戏演完了，妆卸了，他们接受了自己不再是“兵”，而是“张壁人”的命运。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T09_FINALE_CHESS",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [
+                    "我找到了殿内左边是佛教雕塑右面是道教雕塑",
+                    "我在二郎庙看到了一座戏台"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T09_FINALE_CHESS",
+            "stage_name": "终章：气生道成 · 守护真谛",
+            "location": "棋院",
+            "target_location_coordinate": {
+                "latitude": 36.963472,
+                "longitude": 111.97305
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "辨认棋院匾额上的四个篆书大字。这四个字揭示了张壁由“铁”化“泥”的真谛，它们是？",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "STORY_UNLOCK",
+                "item_name": "任务完成。风铃止息，星野长明。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T10_ENDING",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [
+                    "气生道成"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T10_ENDING",
+            "stage_name": "结局：风铃止息 · 星野长明",
+            "location": "棋院",
+            "target_location_coordinate": {
+                "latitude": 36.963472,
+                "longitude": 111.97305
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "NPC_INTERACTION",
+            "completion_mechanism": [
+                "AI_NPC_DIALOGUE_COMPLETE"
+            ],
+            "objective_template": "聆听最后的结局，领悟“泥包铁”的终极含义。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "ENDING",
+                "item_name": "任务完成"
+            },
+            "sub_tasks": [],
+            "next_task_id": "END",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [
+                    "任务完成"
+                ],
+                "visuals": []
+            }
+        }
+    ]
+}

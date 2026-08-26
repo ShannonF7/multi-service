@@ -1,0 +1,1 @@
+# manage text + embedding + search

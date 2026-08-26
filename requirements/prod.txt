@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pydantic
+python-dotenv
+dashscope
+FlagEmbedding
+numpy
+psutil
+jinja2
+requests
+pymysql
+neo4j>=5.26,<6
+langgraph==1.0.7
+langgraph-checkpoint-postgres>=3.0,<4

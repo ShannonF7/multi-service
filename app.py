@@ -1,422 +1,281 @@
-import os
-import json
-import time
-import atexit
 import logging
-import asyncio
-import signal
-from typing import List, Dict, Any, Optional
-from concurrent.futures import ThreadPoolExecutor
-
-import numpy as np
-import psutil
-import psycopg2
-import psycopg2.pool
-import psycopg2.extras
-from fastapi import FastAPI, Query, HTTPException
-from pydantic import BaseModel
-from FlagEmbedding import BGEM3FlagModel
+import os
+import time
+import datetime
+import json
+import importlib.util
+from pathlib import Path
+from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import iterate_in_threadpool
+from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 load_dotenv()
 
-PG_CONFIG = {
-    "host": "localhost",
-    "port": os.getenv("DB_PORT"),
-    "database": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-}
-
-BGE_MODEL_PATH = "/home/zhangbi/Zhangbi_Traveler/LLM_model/Model_api/checkpoints/bge-large-zh-v1.5/"
-EMBED_DIM = 1024
-
-# Thread pool and DB pool sizes
-THREAD_WORKERS = 8
-DB_MINCONN = 3
-DB_MAXCONN = 20
-
-# Search params
-KW_MAX_RESULTS = 50
-KW_DISTANCE_THRESHOLD = 1.5
-GLOBAL_MAX_RESULTS = 100
-DEFAULT_TOPK = 10
+from src.scripts.router import router as script_router
+from src.llm.router import router as llm_router
+from src.database.session import get_db
+from src.scripts.schemas import BaseResponse, ErrorCode
+from src.core.security import SecurityMiddleware
+from src.cv.feature_extractor import get_feature_extractor
+from src.rag.sync_router import router as rag_sync_router
+from src.rag.semantic_router import router as rag_semantic_router
+from src.rag.graph_router import router as rag_graph_router
+from src.semantic_growth.api import router as semantic_growth_router
 
 # Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("pg_hybrid_search")
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "app.log")
 
-# ----------------------
-# Initialize FastAPI
-# ----------------------
-app = FastAPI(title="Hybrid RAG Search (pgvector + BGE)")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s]: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ],
+    force=True
+)
+logger = logging.getLogger(__name__)
 
-# ----------------------
-# DB connection pool
-# ----------------------
-pg_pool: Optional[psycopg2.pool.SimpleConnectionPool] = None
-
-def init_pg_pool():
-    global pg_pool
-    if pg_pool is None:
-        pg_pool = psycopg2.pool.SimpleConnectionPool(
-            minconn=DB_MINCONN,
-            maxconn=DB_MAXCONN,
-            **PG_CONFIG
-        )
-        logger.info("Initialized Postgres connection pool.")
-
-# ----------------------
-# ThreadPool for blocking tasks
-# ----------------------
-executor = ThreadPoolExecutor(max_workers=THREAD_WORKERS)
-
-# ----------------------
-# Load BGE model (single global instance)
-# ----------------------
-_model: Optional[BGEM3FlagModel] = None
-
-def load_bge_model():
-    global _model
-    if _model is not None:
-        return
-    logger.info("Loading BGE model from %s", BGE_MODEL_PATH)
-    # prefer GPU if available; the FlagEmbedding wrapper handles internals
-    _model = BGEM3FlagModel(BGE_MODEL_PATH, device="cuda", use_fp16=True)
-    logger.info("BGE model loaded.")
-
-def close_bge_model():
-    global _model
-    if _model is None:
-        return
-    try:
-        # FlagEmbedding may provide stop_pool / close
-        if hasattr(_model, "stop_pool"):
-            _model.stop_pool()
-        if hasattr(_model, "close"):
-            _model.close()
-    except Exception as e:
-        logger.warning("Error closing BGE model pool: %s", e)
-    finally:
-        _model = None
-        logger.info("BGE model closed.")
-
-atexit.register(close_bge_model)
-
-# ----------------------
-# Utility: embed and convert for pgvector
-# ----------------------
-def embed_texts(texts: List[str], batch_size: int = 4) -> List[List[float]]:
-    """
-    Embed texts using the loaded BGE model.
-    Returns list of float lists (normalized).
-    """
-    load_bge_model()
-    global _model
-    if _model is None:
-        raise RuntimeError("BGE model not loaded")
-
-    embeddings: List[List[float]] = []
-    # model.encode returns dict with "dense_vecs" (numpy array)
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i+batch_size]
-        outputs = _model.encode(batch)  # may return dict
-        # outputs["dense_vecs"] may be numpy array shape (N, D)
-        vecs = None
-        if isinstance(outputs, dict) and "dense_vecs" in outputs:
-            vecs = outputs["dense_vecs"]
-        elif isinstance(outputs, (list, tuple)):
-            # occasional wrapper; try first element
-            first = outputs[0]
-            if isinstance(first, dict) and "dense_vecs" in first:
-                vecs = first["dense_vecs"]
-            else:
-                # last fallback: treat outputs as array-like
-                vecs = np.array(outputs)
-        else:
-            vecs = np.array(outputs)
-
-        vecs = np.asarray(vecs, dtype=np.float32)
-        # l2 normalize
-        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
-        vecs = vecs / norms
-        for v in vecs:
-            embeddings.append(v.tolist())
-    return embeddings
-
-def embed_text(text: str) -> List[float]:
-    return embed_texts([text], batch_size=1)[0]
-
-def to_pgvector(vec: List[float]) -> str:
-    """Convert python list to pgvector literal string like '[0.012345, ...]'"""
-    return "[" + ",".join(f"{float(x):.6f}" for x in vec) + "]"
-
-# ----------------------
-# DB search functions
-# ----------------------
-def run_keyword_search_pg_blocking(query_embedding: List[float], n_results: int, conn) -> List[Dict[str, Any]]:
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    results: List[Dict[str, Any]] = []
-    try:
-        emb_str = to_pgvector(query_embedding)
-        limit = min(n_results, KW_MAX_RESULTS)
-        sql = """
-            SELECT id, keyword, refs, (embedding <-> %s::vector) AS distance
-            FROM keywords
-            ORDER BY embedding <-> %s::vector
-            LIMIT %s
-        """
-        cur.execute(sql, (emb_str, emb_str, limit))
-        kw_rows = cur.fetchall()
-
-        doc_ids = set()
-        keyword_matches = []
-        for row in kw_rows:
-            distance = row.get("distance")
-            if distance is None:
-                continue
-            if float(distance) > KW_DISTANCE_THRESHOLD:
-                continue
-            refs = row.get("refs") or []
-            if isinstance(refs, str):
-                try:
-                    refs = json.loads(refs)
-                except Exception:
-                    refs = []
-            for ref in refs:
-                if isinstance(ref, dict) and "doc_id" in ref:
-                    doc_ids.add(ref["doc_id"])
-                    keyword_matches.append({
-                        "doc_id": ref["doc_id"],
-                        "distance": float(distance),
-                        "similarity": 1.0 / (1.0 + float(distance))
-                    })
-
-        if not doc_ids:
-            return []
-
-        cur.execute("SELECT id, content, metadata FROM texts WHERE id = ANY(%s)", (list(doc_ids),))
-        doc_rows = cur.fetchall()
-        doc_map = {r["id"]: r for r in doc_rows}
-        for match in keyword_matches:
-            row = doc_map.get(match["doc_id"])
-            if not row:
-                continue
-            content = (row.get("content") or "").strip()
-            if (not content or len(content) < 10 or content in {"整理内容如下：", "暂无描述", "待补充", "敬请期待"}):
-                continue
-            metadata = row.get("metadata") or {}
-            position = metadata.get("position", "")
-            results.append({
-                "id": match["doc_id"],
-                "content": content,
-                "position": position,
-                "metadata": metadata,
-                "similarity": match["similarity"] * 1.15,
-                "distance": match["distance"],
-                "match_type": "keyword"
-            })
-        return results
-    finally:
-        cur.close()
-
-def enhanced_doc_search_pg_blocking(query: str, n_results: int, conn) -> List[Dict[str, Any]]:
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        query_text = f"query: {query.strip()}" if not query.startswith("query:") else query
-        # embed
-        q_emb = embed_text(query_text)
-        emb_str = to_pgvector(q_emb)
-        limit = min(n_results * 2, GLOBAL_MAX_RESULTS)
-        sql = """
-            SELECT id, content, metadata, (embedding <-> %s::vector) AS distance
-            FROM texts
-            ORDER BY embedding <-> %s::vector
-            LIMIT %s
-        """
-        cur.execute(sql, (emb_str, emb_str, limit))
-        rows = cur.fetchall()
-        results = []
-        seen_contents = set()
-        for row in rows:
-            if len(results) >= n_results:
-                break
-            content = (row.get("content") or "").strip()
-            distance = row.get("distance")
-            if distance is None:
-                continue
-            metadata = row.get("metadata") or {}
-            if (not content or content in seen_contents or content in {"整理内容如下：", "暂无描述", "待补充", "敬请期待"} or len(content) < 10):
-                continue
-            seen_contents.add(content)
-            results.append({
-                "id": row.get("id"),
-                "content": content,
-                "position": metadata.get("position", ""),
-                "metadata": metadata,
-                "similarity": 1.0 / (1.0 + float(distance)),
-                "distance": float(distance),
-                "match_type": "global"
-            })
-        return results
-    finally:
-        cur.close()
-
-# ----------------------
-# Async wrapper that uses executor
-# ----------------------
-async def run_keyword_search_pg(query_embedding: List[float], n_results: int) -> List[Dict[str, Any]]:
-    conn = pg_pool.getconn()
-    try:
-        return await asyncio.get_event_loop().run_in_executor(executor, run_keyword_search_pg_blocking, query_embedding, n_results, conn)
-    finally:
-        pg_pool.putconn(conn)
-
-async def enhanced_doc_search_pg(query: str, n_results: int) -> List[Dict[str, Any]]:
-    conn = pg_pool.getconn()
-    try:
-        return await asyncio.get_event_loop().run_in_executor(executor, enhanced_doc_search_pg_blocking, query, n_results, conn)
-    finally:
-        pg_pool.putconn(conn)
-
-# ----------------------
-# Hybrid search endpoint logic
-# ----------------------
-class SearchResponseItem(BaseModel):
-    id: str
-    content: str
-    position: Optional[str] = ""
-    metadata: Optional[Dict[str, Any]] = {}
-    similarity: float
-    distance: float
-    match_type: str
-
-# return ids
-class SearchResponse(BaseModel):
-    results: List[SearchResponseItem]
-    source_ids: List[str]   
+app = FastAPI(title="Travel API", version="1.0.0")
 
 @app.on_event("startup")
-async def on_startup():
-    init_pg_pool()
-    load_bge_model()
-    logger.info("App startup complete.")
+async def startup_event():
+    logger.info("Initializing Feature Extractor Model...")
+    # Initialize the singleton
+    get_feature_extractor()
+    logger.info("Feature Extractor Model Initialized.")
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    # close pools gracefully
-    if pg_pool:
+# 1. Global Exception Handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # Map HTTP status codes to custom ErrorCode if possible, or use generic logic
+    custom_code = exc.status_code
+    if exc.status_code == 400:
+        custom_code = ErrorCode.PARAM_ERROR.value
+    elif exc.status_code == 401:
+        custom_code = ErrorCode.UNAUTHORIZED.value
+    elif exc.status_code == 403:
+        custom_code = ErrorCode.FORBIDDEN.value
+    elif exc.status_code == 404:
+        custom_code = ErrorCode.NOT_FOUND.value
+    elif exc.status_code == 500:
+        custom_code = ErrorCode.INTERNAL_ERROR.value
+    
+    
+    return JSONResponse(
+        status_code=exc.status_code, # HTTP status code remains standard
+        content=BaseResponse(
+            code=custom_code,
+            message=exc.detail,
+            data=None
+        ).dict()
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global Exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content=BaseResponse(
+            code=ErrorCode.INTERNAL_ERROR.value,
+            message="Internal Server Error",
+            data=str(exc) if os.getenv("DEBUG") else None
+        ).dict()
+    )
+
+# 2. Security Middleware (Imported from src.core.security)
+# app.add_middleware(SecurityMiddleware) is called below
+
+# 3. Logging Middleware
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        
+        # Define paths to ignore detailed logging for
+        ignored_paths = ["/docs", "/redoc", "/openapi.json", "/favicon.ico"]
+        should_log_details = (
+            request.url.path not in ignored_paths
+            and request.url.path != "/rag/graph/sync/jobs"
+        )
+
+        # Log Request
+        request_body_content = ""
+        if should_log_details:
+            # 对 SSE / 流式端点，不要调用 request.body()（会与 BaseHTTPMiddleware 的 receive 管道冲突）
+            # 只记录一个占位符，保留原有日志格式。
+            if (
+                request.url.path.endswith("/chat/stream") or 
+                request.url.path.endswith("/chat/stream/") or
+                request.url.path.endswith("/task/evaluation/stream") or 
+                request.url.path.endswith("/task/evaluation/stream/") or
+                request.url.path.endswith("/chat/test/") or
+                request.url.path.endswith("/chat/test") or
+                request.url.path.endswith("/npc/chat/stream_with_prompt/") or
+                request.url.path.endswith("/npc/chat/stream_with_prompt")
+            ):
+                request_body_content = "<Streaming Request Body Skipped>"
+            else:
+                content_type = request.headers.get("content-type", "")
+
+                if "multipart/form-data" in content_type:
+                    request_body_content = "[Multipart/Form-Data File Upload]"
+                else:
+                    try:
+                        # Read request body
+                        body_bytes = await request.body()
+                        # Reset body so it can be read again by the app
+                        async def receive():
+                            return {"type": "http.request", "body": body_bytes, "more_body": False}
+                        request._receive = receive
+
+                        if body_bytes:
+                            request_body_content = body_bytes.decode()
+                            if "application/json" in content_type:
+                                try:
+                                    data = json.loads(request_body_content)
+                                    if isinstance(data, dict) and "history" in data:
+                                        data.pop("history")
+                                        request_body_content = json.dumps(data, ensure_ascii=False)
+                                except:
+                                    pass
+                    except Exception:
+                        request_body_content = "<Binary or Stream>"
+
+            logger.info(f"[Request] {request.method} {request.url.path} - 请求数据: {request_body_content}")
+        else:
+            logger.info(f"[Request] {request.method} {request.url.path} - (Log Skipped for Doc/Static)")
+
         try:
-            pg_pool.closeall()
+            response = await call_next(request)
         except Exception as e:
-            logger.warning("Error closing PG pool: %s", e)
-    # shutdown executor
-    try:
-        executor.shutdown(wait=True)
-    except Exception as e:
-        logger.warning("Error shutting down thread pool: %s", e)
-    # close model
-    close_bge_model()
-    logger.info("App shutdown complete.")
+            raise e
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "pid": os.getpid(), "mem_percent": psutil.virtual_memory().percent}
+        process_time = (time.time() - start_time) * 1000
+        formatted_process_time = "{0:.2f}".format(process_time)
+        
+        response_body_content = ""
+        if should_log_details:
+            content_type = (response.headers.get("content-type", "") or "").lower()
+            if "text/event-stream" in content_type:
+                logger.info(
+                    f"[Response] {request.method} {request.url.path} - 响应数据: <StreamingResponse text/event-stream> - 耗时: {formatted_process_time} ms"
+                )
+                return response
+            try:
+                # Consuming response body to log it
+                response_body = [section async for section in response.body_iterator]
+                response.body_iterator = iterate_in_threadpool(iter(response_body))
+                if response_body:
+                    response_body_content = b"".join(response_body).decode()
+            except Exception:
+                response_body_content = "<Binary or Stream>"
 
-@app.get("/search", response_model=List[SearchResponseItem])
-async def search_api(q: str = Query(..., min_length=1), topk: int = Query(10, ge=1, le=50)):
-    """
-    Hybrid search API:
-    1. Embed query using BGE
-    2. Run keyword search and global vector search in parallel
-    3. Merge & deduplicate results, prioritizing keyword matches
-    4. Return top-k results
-    """
-    start = time.time()
-    # resource check
-    memp = psutil.virtual_memory().percent
-    if memp > 95:
-        logger.warning("High memory usage: %s%%", memp)
+            logger.info(f"[Response] {request.method} {request.url.path} - 响应数据: {response_body_content} - 耗时: {formatted_process_time} ms")
+        else:
+            logger.info(f"[Response] {request.method} {request.url.path} - (Log Skipped) - 耗时: {formatted_process_time} ms")
+        
+        return response
 
-    # 1. embedding (sync call) -> run in executor to avoid blocking event loop
-    loop = asyncio.get_event_loop()
-    try:
-        query_embedding = await loop.run_in_executor(executor, embed_text, q)
-    except Exception as e:
-        logger.error("Embedding failed: %s", e)
-        raise HTTPException(status_code=500, detail="Embedding failed")
+app.add_middleware(SecurityMiddleware)
+app.add_middleware(LoggingMiddleware)
 
-    # 2. parallel searches
-    kw_task = asyncio.create_task(run_keyword_search_pg(query_embedding, min(15, KW_MAX_RESULTS)))
-    global_task = asyncio.create_task(enhanced_doc_search_pg(q, int(topk * 1.5)))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    try:
-        keyword_results, global_results = await asyncio.wait_for(asyncio.gather(kw_task, global_task), timeout=30.0)
-    except asyncio.TimeoutError:
-        logger.error("Search tasks timed out")
-        raise HTTPException(status_code=504, detail="Search timeout")
-    except Exception as e:
-        logger.error("Search tasks error: %s", e)
-        raise HTTPException(status_code=500, detail="Search internal error")
+app.include_router(script_router, prefix="/api/v1", tags=["Script Generation & Chat"])
+app.include_router(llm_router, prefix="/api/v1", tags=["Task Judge & Advance"])
 
-    # 3. Merge & dedupe preserving your original priority: keyword first
-    combined = []
-    seen_ids = set()
-    seen_contents = set()
-    for r in keyword_results:
-        if len(combined) >= topk:
-            break
-        chash = hash(r["content"].strip().lower()) if r.get("content") else None
-        if r["id"] in seen_ids or (chash is not None and chash in seen_contents):
-            continue
-        combined.append(r)
-        seen_ids.add(r["id"])
-        if chash is not None:
-            seen_contents.add(chash)
+# A端“一键入库”写入的是 AI_DB 中的 RAG 结构化表，不使用 optimized 主业务库。
+# 这里保持根路径 /sync/*，让 A 端只需要配置 B 端服务根地址即可提交。
+# 接口仍经过全局 SecurityMiddleware；生产环境需携带 X-API-KEY。
+app.include_router(rag_sync_router, tags=["A端一键入库 / RAG Sync"])
+app.include_router(rag_semantic_router, tags=["RAG Semantic Completion"])
+app.include_router(rag_graph_router, tags=["Published Graph Projection"])
+app.include_router(semantic_growth_router)
 
-    for r in global_results:
-        if len(combined) >= topk:
-            break
-        chash = hash(r["content"].strip().lower()) if r.get("content") else None
-        if r["id"] in seen_ids or (chash is not None and chash in seen_contents):
-            continue
-        combined.append(r)
-        seen_ids.add(r["id"])
-        if chash is not None:
-            seen_contents.add(chash)
 
-    combined.sort(key=lambda x: -x["similarity"])
-    final = combined[:topk]
-    elapsed = time.time() - start
-    logger.info("Search q=%s topk=%d results=%d time=%.3fs", q, topk, len(final), elapsed)
-    return final
+def _mount_420pro_app() -> None:
+    module_path = Path(__file__).resolve().parent / "src" / "images" / "420pro" / "main_api.py"
+    if not module_path.exists():
+        logger.warning("420pro main_api.py not found, skip mounting")
+        return
 
-# Admin endpoint: create vector indexes (careful: long running)
-@app.post("/admin/reindex")
-async def reindex_vectors():
-    """
-    Create vector indexes (HNSW). Run after bulk-loading data.
-    Note: requires appropriate privileges. Long-running for large datasets.
-    """
-    conn = pg_pool.getconn()
-    try:
-        cur = conn.cursor()
-        # adjust operators to desired distance type (vector_l2_ops / vector_cosine_ops)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_text_embedding ON texts USING hnsw (embedding vector_l2_ops)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_kw_embedding ON keywords USING hnsw (embedding vector_l2_ops)")
-        conn.commit()
-        return {"status": "ok", "msg": "indexes created"}
-    except Exception as e:
-        logger.error("Reindex failed: %s", e)
-        conn.rollback()
-        raise HTTPException(status_code=500, detail="Reindex failed")
-    finally:
-        pg_pool.putconn(conn)
+    spec = importlib.util.spec_from_file_location("src.images.420pro.main_api", module_path)
+    if spec is None or spec.loader is None:
+        logger.warning("Unable to load 420pro app spec, skip mounting")
+        return
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sub_app = getattr(module, "app", None)
+    if sub_app is None:
+        logger.warning("420pro app instance not found, skip mounting")
+        return
+
+    app.mount("/api/v1/420pro", sub_app)
+
+
+_mount_420pro_app()
+
+# Use absolute path for templates to avoid CWD issues
+base_dir = os.path.dirname(os.path.abspath(__file__))
+templates = Jinja2Templates(directory=os.path.join(base_dir, "templates"))
+
+
+@app.get("/db")
+def list_tables(request: Request, db: Session = Depends(get_db)):
+    inspector = inspect(db.bind)
+    tables = inspector.get_table_names()
+
+    return templates.TemplateResponse(
+        "table_list.html",
+        {
+            "request": request,
+            "tables": tables
+        }
+    )
+
+
+@app.get("/db/{table_name}")
+def view_table(
+    table_name: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    inspector = inspect(db.bind)
+
+    if table_name not in inspector.get_table_names(schema='public'):
+        raise HTTPException(status_code=404, detail="表不存在（可能不在public schema里哦）")
+
+    result = db.execute(text(f"SELECT * FROM public.{table_name} LIMIT 50"))
+    rows = result.fetchall()
+    columns = result.keys()
+
+    return templates.TemplateResponse(
+        "table_detail.html",
+        {
+            "request": request,
+            "table_name": table_name,
+            "columns": columns,
+            "rows": rows
+        }
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
-    init_pg_pool()
-    load_bge_model()
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, workers=1)
+    uvicorn.run(app, host="0.0.0.0", port=8000, workers=1)

@@ -1,0 +1,413 @@
+{
+    "system_config": {
+        "script_metadata": {
+            "script_id": "ZBGB_AWD_001",
+            "title": "孤城黎明",
+            "version": "1.1.0",
+            "style": "古风武侠，悬疑解谜",
+            "recommended_group_size": "4-6人",
+            "era_background": "天下动荡，\"玄冥宗\"把持朝政，义军\"破晓\"欲攻破其最后要塞\"孤城\"。此城依山而建，易守难攻，唯有获得城内布防图，方能破城。你们，是潜入城内的义军内应。"
+        },
+        "data_model_notes": "该JSON包含所有任务，以及T05, T06, T07中用于动态调整的商品槽位（SLOT）及NPC话术模板。"
+    },
+    "four_deities_collection": {
+        "mechanism": "集齐四大神兽（青龙、白虎、朱雀、玄武）之力，在城外义军发动总攻前，于子时前找到并送出\"孤城布防图\"。",
+        "final_action": "最后在研学院合成需要四象之力。"
+    },
+    "tasks": [
+        {
+            "task_id": "T01_PROLOGUE",
+            "stage_name": "序幕：暗夜密令",
+            "location": "南堡门",
+            "position": {
+                "latitude": 36.96195,
+                "longitude": 111.97355
+            },
+            "npc": "{{NPC_T01_NAME}}",
+            "npc_role": "{{NPC_T01_ROLE}}",
+            "task_type": "NPC_INTERACTION",
+            "completion_mechanism": "NPC_DIALOGUE_COMPLETE",
+            "objective_template": "获取入城凭证（门票）与任务指引，前往堡墙脚下通过考验。",
+            "completion_criteria": {
+                "criteria": [
+                    {
+                        "id": "C1",
+                        "type": "fact",
+                        "desc": "是否已获得入城凭证（门票）",
+                        "weight": 0.4
+                    },
+                    {
+                        "id": "C2",
+                        "type": "fact",
+                        "desc": "是否已获得任务指引",
+                        "weight": 0.4
+                    },
+                    {
+                        "id": "tone",
+                        "type": "degree",
+                        "desc": "语气是否礼貌、中立",
+                        "weight": 0.2
+                    }
+                ],
+                "pass_threshold": 0.7
+            },
+            "triggers": [
+                {
+                    "priority": 100,
+                    "conditions": [
+                        {
+                            "type": "refusal",
+                            "operator": "==",
+                            "value": true
+                        }
+                    ],
+                    "action": {
+                        "assessment": "fail",
+                        "content": "既然你不想费力，那就买个指定商品来换取过关资格吧。"
+                    }
+                },
+                {
+                    "priority": 80,
+                    "conditions": [
+                        {
+                            "type": "completion",
+                            "operator": "==",
+                            "value": "not_completed"
+                        }
+                    ],
+                    "action": {
+                        "assessment": "info",
+                        "content": "你需要先获得入城凭证(门票）以及任务指引才能继续。"
+                    }
+                },
+                {
+                    "priority": 50,
+                    "conditions": [
+                        {
+                            "type": "fact",
+                            "id": "C1",
+                            "operator": ">=",
+                            "value": 1.0
+                        },
+                        {
+                            "type": "fact",
+                            "id": "C2",
+                            "operator": ">=",
+                            "value": 1.0
+                        },
+                        {
+                            "type": "degree",
+                            "id": "tone",
+                            "operator": "<",
+                            "value": 0.5
+                        }
+                    ],
+                    "action": {
+                        "assessment": "warning",
+                        "content": "事情做对了，不过注意下语气。守城兵若听见，你我都要掉脑袋。"
+                    }
+                },
+                {
+                    "priority": 10,
+                    "conditions": [
+                        {
+                            "type": "fact",
+                            "id": "C1",
+                            "operator": ">=",
+                            "value": 1.0
+                        },
+                        {
+                            "type": "fact",
+                            "id": "C2",
+                            "operator": ">=",
+                            "value": 1.0
+                        }
+                    ],
+                    "action": {
+                        "assessment": "success",
+                        "content": "事成！已获得入城凭证与任务指引，前往下一关。"
+                    }
+                }
+            ],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "ACCESS_TOKEN",
+                "item_semantic": "入城凭证与任务指引"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T02_FIRST_TRIAL"
+        },
+        {
+            "task_id": "T02_FIRST_TRIAL",
+            "stage_name": "第一幕：朱雀考验 · 忠义千秋",
+            "location": "堡墙脚下",
+            "position": {
+                "latitude": 36.96195,
+                "longitude": 111.97355
+            },
+            "npc": "周先生",
+            "npc_role": "城内风水师",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": "AI_ANSWER_CORRECT",
+            "objective_template": "想要获取通行令牌，需先对上暗号。看看身后的庙宇，告诉我“亘古一人”描写的是哪位英雄？进去看看。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_semantic": "布防图碎片一"  
+            },
+            "sub_tasks": [],
+            "next_task_id": "T03_TUNNEL_SEEK"
+        },
+        {
+            "task_id": "T03_TUNNEL_SEEK",
+            "stage_name": "第二幕：地道潜行 · 星宿为引",
+            "location": "关帝庙到地道路上沿途",
+            "position": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "",
+            "npc_role": "",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanism": "AI_ANSWER_CORRECT",
+            "objective_template": "沿途留意古堡内建筑与星宿的对应关系，到指定地点拍摄该景点的照片，让AI识别。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_KEYWORD",
+                "item_semantic": "最终数字：28"
+            },
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T03_S1",
+                    "location": "南堡门",
+                    "position": {
+                        "latitude": 36.96195,
+                        "longitude": 111.97355
+                    },
+                    "game": "捕捉张宿之影",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": "AI_IMAGE_JUDGE",
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "target_photo_name": "南堡门建筑",
+                        "target_photo_description": "请拍摄古堡的‘南堡门’。南堡门作为古堡正门，对应南方朱雀七宿之‘张宿’。AI识别建筑通过后获得线索一。",
+                        "ai_judgment_prompt": "Is this image showing the South Gate (Nanbaomen) of Zhangbi Ancient Castle? Look for the distinctive stone archway and traditional gate structure."
+                    },
+                    "virtual_reward": {
+                        "item_category": "CLUE_KEYWORD",
+                        "item_semantic": "线索一：【南】风初动，朱雀展翼，一宿点亮天之【东】。"
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S2",
+                    "location": "魁星楼",
+                    "position": {
+                        "latitude": 36.96191,
+                        "longitude": 111.97358
+                    },
+                    "game": "定格奎宿之形",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": "AI_IMAGE_JUDGE",
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "target_photo_name": "魁星楼建筑",
+                        "target_photo_description": "请寻找并拍摄堡墙上的‘魁星楼’。其名取‘奎’宿谐音，对应西方白虎七宿之首‘奎宿’。AI识别建筑通过后获得线索二。",
+                        "ai_judgment_prompt": "Is this image showing the Kuixing Tower of Zhangbi Ancient Castle? It is a traditional pavilion structure situated on the fortress wall."
+                    },
+                    "virtual_reward": {
+                        "item_category": "CLUE_KEYWORD",
+                        "item_semantic": "线索二：【北】斗回旋，白虎抬首，二宿遥指地之【南】。"
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S3",
+                    "location": "北堡门",
+                    "position": {
+                        "latitude": 36.963528,
+                        "longitude": 111.973137
+                    },
+                    "game": "寻找壁宿之镇",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": "AI_IMAGE_JUDGE",
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "target_photo_name": "北堡门建筑",
+                        "target_photo_description": "请前往古堡北端拍摄‘北堡门’。此处地势险要，对应北方玄武七宿之‘壁宿’。AI识别建筑通过后获得线索三。",
+                        "ai_judgment_prompt": "Is this image showing the North Gate (Beibaomen) of Zhangbi Ancient Castle? It is a stone-built gate structure at the northern end of the main street."
+                    },
+                    "virtual_reward": {
+                        "item_category": "CLUE_KEYWORD",
+                        "item_semantic": "线索三：【西】风萧萧，玄武卧土，三宿定住了天之【北】。"
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S4",
+                    "location": "星象文化展厅",
+                    "position": {
+                        "latitude": 36.96111,
+                        "longitude": 111.97343
+                    },
+                    "game": "感应心宿之光",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": "AI_IMAGE_JUDGE",
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "target_photo_name": "星象文化展厅建筑",
+                        "target_photo_description": "请寻找并拍摄‘星象文化展厅’建筑。馆内承载着东方青龙‘心宿’的奥秘。AI识别建筑通过后获得线索四。",
+                        "ai_judgment_prompt": "Is this image showing the exterior of the Astrology Hall (Xingxiang Guan) in Zhangbi Ancient Castle?"
+                    },
+                    "virtual_reward": {
+                        "item_category": "CLUE_KEYWORD",
+                        "item_semantic": "线索四：【东】升日出，青龙咆哮，四宿呼应了天之【西】。"
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S5_FINAL",
+                    "location": "任意位置",
+                    "position": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "星官总数",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanism": "AI_ANSWER_CORRECT",
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "你已游历四方，集齐了代表青龙、朱雀、白虎、玄武四象的线索。根据古代星象学，这四象合起来共由多少星宿组成？请回答数字。",
+                        "ai_answer_prompt": "玩家需要回答四象所含星宿的总数。 ",
+                        "correct_answer": "28"
+                    },
+                    "virtual_reward": {
+                        "item_category": "CLUE_KEYWORD",
+                        "item_semantic": "地道开启密码：28"
+                    }
+                }
+            ],
+            "next_task_id": "T04_TUNNEL_CROSS"
+        },
+        {
+            "task_id": "T04_TUNNEL_CROSS",
+            "stage_name": "第二幕：地道潜行 · 密道穿越",
+            "location": "城内密道",
+            "position": {
+                "latitude": 36.961943,
+                "longitude": 111.973174
+            },
+            "npc": "",
+            "npc_role": "",
+            "task_type": "ARRIVAL_TASK",
+            "completion_mechanism": "GPS_CHECK",
+            "objective_template": "地道幽深曲折，曾是孤城最后的逃生与反击通路。你们必须在不引起注意的情况下穿越其中，抵达出口。成功穿越，意味着你们已进入真正的核心区域。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_semantic": "布防图残片二"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T05_ZAB_ARCHERY"
+        },
+       {
+            "task_id": "T05_ZAB_ARCHERY",
+            "stage_name": "第三幕：礼射试炼",
+            "location": "张壁礼射院",
+            "position":{
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "张壁礼射院教头",
+            "npc_role": "义军训练教头",
+            "task_type": "PHYSICAL_GAME",
+            "completion_mechanism": "STAFF_CONFIRM",
+            "objective_template": "教头直言不讳：\"破晓义军不收无能之辈。谋略重要，但临阵失手，同样致命。\"你需要亲自完成射箭试炼，用行动证明你不仅懂孤城，更配得上义军的信任。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_semantic": "布防图残片三"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T06_SHADOW_CLOCK"
+        },
+        {
+            "task_id": "T06_SHADOW_CLOCK",
+            "stage_name": "第四幕：戊己定时",
+            "location": "中央戊己土",
+            "position": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "中央戊己土更夫",
+            "npc_role": "更夫",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": "AI_ANSWER_CORRECT",
+            "objective_template": "更夫提醒你，总攻的成败取决于时辰分毫不差。站在中轴之上，结合当前节气，观察自己影子投射的生肖刻度。这个结果将决定义军是否在正确的时间发动进攻。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_semantic": "布防图残片四"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T07_CHESS_ACADEMY"
+        },
+        {
+            "task_id": "T07_CHESS_ACADEMY",
+            "stage_name": "第五幕：棋院破译",
+            "location": "棋院",
+            "position": {
+                "latitude": 36.963472,
+                "longitude": 111.97305
+            },
+            "npc": "棋院院长",
+            "npc_role": "义军智囊",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": "AI_ANSWER_CORRECT",
+            "objective_template": "棋局早已封盘，真正的生路藏在棋院正厅上方的匾额之中。那四个字，是孤城防御的最终坐标。找到它，意味着你已站在胜负分界线上。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_semantic": "布防图残片五"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T08_FINALE"
+        },
+        {
+            "task_id": "T08_FINALE",
+            "stage_name": "终幕：研学院合成 · 黎明将至",
+            "location": "研学院",
+            "position": {
+                "latitude": 36.963556,
+                "longitude": 111.973771
+            },
+            "npc": "研学院主人",
+            "npc_role": "义军密使",
+            "task_type": "COMBINE_ITEMS",
+            "completion_mechanism": "COMBINE_SUCCESS",
+            "objective_template": "当最后一枚残片嵌入图纸，孤城的防御全貌终于显现。城外，义军已列阵待命。你们成功送出布防图的那一刻，黎明的号角将在山谷中响起。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "",
+                "item_semantic": ""
+            },
+            "sub_tasks": [],
+            "next_task_id": "END"
+        }
+    ]
+}

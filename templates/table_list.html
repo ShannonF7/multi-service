@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>数据库表列表</title>
+</head>
+
+<body>
+
+    <h2>数据库中的表</h2>
+
+    <ul>
+        {% for table in tables %}
+        <li>
+            <a href="/db/{{ table }}">{{ table }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+
+</body>
+
+</html>

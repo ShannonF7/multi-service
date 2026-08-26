@@ -1,0 +1,653 @@
+{
+    "system_config": {
+        "script_metadata": {
+            "script_id": "ZBGB_AWD_001",
+            "title": "孤城黎明",
+            "version": "1.1.0",
+            "style": "古风武侠，悬疑解谜",
+            "recommended_group_size": "4-6人",
+            "era_background": "天下动荡，\"玄冥宗\"把持朝政，义军\"破晓\"欲攻破其最后要塞\"孤城\"。此城依山而建，易守难攻，唯有获得城内布防图，方能破城。你们，是潜入城内的义军内应。"
+        }
+    },
+    "four_deities_collection": {
+        "mechanism": "通过巡游收集四大星宿之气（朱雀、青龙、白虎、玄武），并在五个核心据点获取《布防图》残片。",
+        "final_action": "最后在研学院合成需要四象之力。"
+    },
+    "tasks": [
+        {
+            "task_id": "T01_PROLOGUE",
+            "stage_name": "序幕：暗夜密令",
+            "location": "南堡门",
+            "target_location_coordinate": {
+                "latitude": 36.96195,
+                "longitude": 111.97355
+            },
+            "npc": "张捕头",
+            "npc_role": "义军接头人",
+            "task_type": "NPC_INTERACTION",
+            "completion_mechanism": [
+                "AI_NPC_DIALOGUE_COMPLETE"
+            ],
+            "objective_template": "获取入城凭证（门票）与任务指引。\n【任务指引】\n1. 与张捕头对接，获取入城凭证。\n2. 前往关帝庙，寻找隐居的周先生，开启第一项\"忠义\"考核。\n3. 注意：城内布防图已被拆分为五份，散落在关帝庙、张壁礼射院、地道、中央戊己土与棋院，务必悉数找回。",
+            "completion_criteria": {
+                "criteria": [
+                    {
+                        "id": "C1",
+                        "type": "fact",
+                        "desc": "是否已获得入城凭证（门票）",
+                        "weight": 0.4
+                    },
+                    {
+                        "id": "C2",
+                        "type": "fact",
+                        "desc": "是否已获得任务指引",
+                        "weight": 0.4
+                    },
+                    {
+                        "id": "tone",
+                        "type": "degree",
+                        "desc": "语气是否礼貌、中立",
+                        "weight": 0.2
+                    }
+                ],
+                "pass_threshold": 0.7
+            },
+            "triggers": [
+                {
+                    "priority": 100,
+                    "conditions": [
+                        {
+                            "type": "refusal",
+                            "operator": "==",
+                            "value": true
+                        }
+                    ],
+                    "action": {
+                        "assessment": "fail",
+                        "content": "既然你不想费力，那就买个指定商品来换取过关资格吧。"
+                    }
+                },
+                {
+                    "priority": 80,
+                    "conditions": [
+                        {
+                            "type": "completion",
+                            "operator": "==",
+                            "value": "not_completed"
+                        }
+                    ],
+                    "action": {
+                        "assessment": "info",
+                        "content": "你需要先获得入城凭证(门票）以及任务指引才能继续。"
+                    }
+                },
+                {
+                    "priority": 50,
+                    "conditions": [
+                        {
+                            "type": "fact",
+                            "id": "C1",
+                            "operator": ">=",
+                            "value": 1.0
+                        },
+                        {
+                            "type": "fact",
+                            "id": "C2",
+                            "operator": ">=",
+                            "value": 1.0
+                        },
+                        {
+                            "type": "degree",
+                            "id": "tone",
+                            "operator": "<",
+                            "value": 0.5
+                        }
+                    ],
+                    "action": {
+                        "assessment": "warning",
+                        "content": "事情做对了，不过注意下语气。守城兵若听见，你我都要掉脑袋。"
+                    }
+                },
+                {
+                    "priority": 10,
+                    "conditions": [
+                        {
+                            "type": "fact",
+                            "id": "C1",
+                            "operator": ">=",
+                            "value": 1.0
+                        },
+                        {
+                            "type": "fact",
+                            "id": "C2",
+                            "operator": ">=",
+                            "value": 1.0
+                        }
+                    ],
+                    "action": {
+                        "assessment": "success",
+                        "content": "事成！已获得入城凭证与任务指引，前往下一关。"
+                    }
+                }
+            ],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "ACCESS_TOKEN",
+                "item_name": "入城凭证与任务指引"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T02_FIRST_TRIAL",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [
+                    {
+                        "id": "H_T01_01",
+                        "content": "必须向用户完整转述任务指引里的步骤 1、2、3，确保用户清楚任务目标",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "answers": [],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T02_FIRST_TRIAL",
+            "stage_name": "第一幕：朱雀考验 · 忠义千秋",
+            "location": "关帝庙前",
+            "target_location_coordinate": {
+                "latitude": 36.96148,
+                "longitude": 111.97351
+            },
+            "npc": "周先生",
+            "npc_role": "隐姓埋名的风水师",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "周先生在考校你们的\"心气\"。观察关帝庙正殿，告诉他那块描写关羽的匾额写的是什么？只有得到先贤认可，才能拿到第一份布防图碎片。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "布防图碎片一：记录了南门暗哨与巡逻换岗规律。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T03_TUNNEL_SEEK",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T02_01",
+                        "content": "关帝庙正殿匾额上描写关羽的四个字为\"亘古一人\"",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    }
+                ],
+                "hints": [
+                    {
+                        "id": "H_T02_01",
+                        "content": "匾额内容高度概括了关羽一生的核心精神",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "answers": [
+                    "亘古一人"
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T03_TUNNEL_SEEK",
+            "stage_name": "第二幕：星宿为引 · 射手之路",
+            "location": "关帝庙到礼射院沿途",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "",
+            "npc_role": "",
+            "task_type": "PHOTO_SCAVENGER_HUNT",
+            "completion_mechanism": [
+                "AI_IMAGE_JUDGE"
+            ],
+            "objective_template": "欲见教头，必先成器。沿途寻找并拍摄四个代表星宿精神的景点，只有集齐\"战意、稳健、视野、杀气\"四象之力，才能开启礼射院的试炼。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T03_S1",
+                    "location": "关帝庙",
+                    "target_location_coordinate": {
+                        "latitude": 36.96148,
+                        "longitude": 111.97351
+                    },
+                    "game": "【尾宿】感悟战意",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": [
+                        "AI_IMAGE_JUDGE"
+                    ],
+                    "task_data": {
+                        "target_photo_name": "关帝庙",
+                        "target_photo_description": "关帝庙立于高岗，其势如「尾宿」之火，乃青龙战旗。教头云：无战意者，握不住弓。请拍摄关帝庙，借武圣之气点亮星图第一点。"
+                    },
+                    "virtual_reward": {
+                        "item_category": "STAR_CONSTELLATION",
+                        "item_name": "【尾宿】已点亮：战意渐起。"
+                    },
+                    "task_knowledge": {
+                        "facts": [],
+                        "hints": [],
+                        "answers": [],
+                        "visuals": []
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S2",
+                    "location": "泥包铁像",
+                    "target_location_coordinate": {
+                        "latitude": 36.96090,
+                        "longitude": 111.97322
+                    },
+                    "game": "【亢宿】窥见稳健",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": [
+                        "AI_IMAGE_JUDGE"
+                    ],
+                    "task_data": {
+                        "target_photo_name": "泥包铁像",
+                        "target_photo_description": "寻找泥包铁像。其内含钢铁，正如「亢宿」之坚韧。教头以此警示：射箭之基在于稳，外表平静如泥，内心决绝如铁。拍摄它，点亮星图第二点。"
+                    },
+                    "virtual_reward": {
+                        "item_category": "STAR_CONSTELLATION",
+                        "item_name": "【亢宿】已点亮：心稳如铁。"
+                    },
+                    "task_knowledge": {
+                        "facts": [],
+                        "hints": [],
+                        "answers": [],
+                        "visuals": []
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S3",
+                    "location": "魁星楼",
+                    "target_location_coordinate": {
+                        "latitude": 36.96191,
+                        "longitude": 111.97358
+                    },
+                    "game": "【奎宿】开启视野",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": [
+                        "AI_IMAGE_JUDGE"
+                    ],
+                    "task_data": {
+                        "target_photo_name": "魁星楼",
+                        "target_photo_description": "魁星楼对应「奎宿」。奎者，库府也，亦是白虎之首。射箭需目极千里，请在此高处拍摄，开启你的射手视野，点亮星图第三点。"
+                    },
+                    "virtual_reward": {
+                        "item_category": "STAR_CONSTELLATION",
+                        "item_name": "【奎宿】已点亮：目力所及，皆为靶标。"
+                    },
+                    "task_knowledge": {
+                        "facts": [],
+                        "hints": [],
+                        "answers": [],
+                        "visuals": []
+                    }
+                },
+                {
+                    "sub_task_id": "T03_S4",
+                    "location": "西方圣境殿",
+                    "target_location_coordinate": {
+                        "latitude": 36.96204,
+                        "longitude": 111.97348
+                    },
+                    "game": "【参宿】凝聚杀气",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanism": [
+                        "AI_IMAGE_JUDGE"
+                    ],
+                    "task_data": {
+                        "target_photo_name": "西方圣境殿",
+                        "target_photo_description": "西方圣境殿对应「参宿」。参宿主兵戈杀伐。在此拍摄，将四象之气凝聚为最后一箭。星图合拢，你已具备前往礼射院的资格。"
+                    },
+                    "virtual_reward": {
+                        "item_category": "STAR_CONSTELLATION",
+                        "item_name": "【参宿】已点亮：杀机毕现。前往礼射院，接受教头的最终检阅。"
+                    },
+                    "task_knowledge": {
+                        "facts": [],
+                        "hints": [],
+                        "answers": [],
+                        "visuals": []
+                    }
+                }
+            ],
+            "next_task_id": "T04_ZAB_ARCHERY"
+        },
+        {
+            "task_id": "T04_ZAB_ARCHERY",
+            "stage_name": "第三幕：礼射试炼 · 临阵不乱",
+            "location": "张壁礼射院",
+            "target_location_coordinate": {
+                "latitude": 36.96172,
+                "longitude": 111.97295
+            },
+            "npc": "张壁礼射院教头",
+            "npc_role": "义军训练教头",
+            "task_type": "PHYSICAL_GAME",
+            "completion_mechanism": [
+                "STAFF_CONFIRM"
+            ],
+            "objective_template": "教头直言不讳：\"破晓义军不收无能之辈。谋略重要，但临阵失手，同样致命。\"你需要亲自完成射箭试炼，用行动证明你不仅懂孤城，更配得上义军的信任。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "布防图残片二：记录了城墙弩机的盲区分布。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T05_TUNNEL_CROSS",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T05_TUNNEL_CROSS",
+            "stage_name": "第四幕：地道潜行 · 密道穿梭",
+            "location": "城内密道",
+            "target_location_coordinate": {
+                "latitude": 36.96353,
+                "longitude": 111.97111
+            },
+            "npc": "",
+            "npc_role": "",
+            "task_type": "ARRIVAL_TASK",
+            "completion_mechanism": [
+                "GPS_CHECK"
+            ],
+            "objective_template": "教头虽然认可了你的箭术，但真正的潜入才刚刚开始。通过礼射院附近的暗门进入地道，躲避巡逻，抵达地道出口获取碎片。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "布防图残片三：记录了地道通往官邸的所有出口。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T06_SHADOW_CLOCK",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T06_SHADOW_CLOCK",
+            "stage_name": "第五幕：戊己定时 · 总攻时辰",
+            "location": "中央戊己土",
+            "target_location_coordinate": {
+                "latitude": 36.96264,
+                "longitude": 111.97326
+            },
+            "npc": "老更夫",
+            "npc_role": "时间的守护者",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "走出地道，便是古堡核心中轴线。更夫手中的更筹已乱。站在当前节气处，请根据阳光下影子的方位，推算出时间对应的地支，判断当前的生肖时辰。总攻时间分秒必争。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "布防图残片四：记录了守军换防的确切时间点。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T07_CHESS_ACADEMY",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T06_1",
+                        "content": "根据当前位置节气标识和影子方向，计算出当前时辰对应的生肖。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    }
+                ],
+                "hints": [
+                    {
+                        "id": "H_T06_01",
+                        "content": "请站在当前节气标识处观察影子方向，影子所指的刻度就是现在的时辰。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    },
+                    {
+                        "id": "H_T06_02",
+                        "content": "根据影子对应的时辰，推算出生肖守护神兽。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    },
+                    {
+                        "id": "H_T06_03",
+                        "content": "互动彩蛋：如果用户答对生肖，可追问其本命生肖，并授予“本命守护”称号。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "answers": [
+                    {
+                        "id": "A_T06_1",
+                        "content": "用户正确回答对应生肖，则任务完成",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ]
+                    }
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T07_CHESS_ACADEMY",
+            "stage_name": "第六幕：棋院破译 · 最后的坐标",
+            "location": "棋院",
+            "target_location_coordinate": {
+                "latitude": 36.96361,
+                "longitude": 111.97393
+            },
+            "npc": "棋院院长",
+            "npc_role": "义军智囊",
+            "task_type": "AI_INTERACTIVE_PUZZLE",
+            "completion_mechanism": [
+                "AI_ANSWER_CORRECT"
+            ],
+            "objective_template": "最后一份碎片藏在棋院匾额的谜题中。院长布下残局，真正的生路就藏在正厅匾额的那四个大字里。找到它，补全布防图的最后一块拼图。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "布防图残片五：记录了玄冥宗主将的居所坐标。"
+            },
+            "sub_tasks": [],
+            "next_task_id": "T08_FINALE",
+            "task_knowledge": {
+                "facts": [
+                    {
+                        "id": "F_T07_1",
+                        "content": "匾额第一个字是\"气\"，源出《管子·内业篇》，象征气脉贯通周流。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    },
+                    {
+                        "id": "F_T07_2",
+                        "content": "匾额第二个字是\"生\"，意为万物藉由土地孕育生长。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    },
+                    {
+                        "id": "F_T07_3",
+                        "content": "匾额第三个字是\"道\"，古形如十字通衢，中有人伫立踌躇，象征路径。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    },
+                    {
+                        "id": "F_T07_4",
+                        "content": "匾额第四个字是\"成\"，本义战事终了，将斧钺高悬于墙，中间一点象固定斧钺的钉子，象征圆满。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    },
+                    {
+                        "id": "F_T07_FULL",
+                        "content": "完整四字答案\"气生道成\"，用于系统内部判定任务完成。",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ],
+                        "visibility": "hidden"
+                    }
+                ],
+                "hints": [
+                    {
+                        "id": "H_T07_01",
+                        "content": "请通过侧向推理猜出匾额上的四个字，不直接出现谜底。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    },
+                    {
+                        "id": "H_T07_02",
+                        "content": "字形提示：\n- 第一个字形状上方作圆形，圆内黑点暗示太阳黑子，旁有三道波浪纹。\n- 第二个字下方为土，上承三笔如草木破土抽芽。\n- 第三个字古形如十字通衢，中有人伫立踌躇。\n- 第四个字中间一点象固定斧钺的钉子，象征圆满。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    },
+                    {
+                        "id": "H_T07_03",
+                        "content": "最高禁令：绝对禁止出现汉字【气】【生】【道】【成】，只能使用\"第一个字\"\"首字\"\"末字\"等代词。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    },
+                    {
+                        "id": "H_T07_04",
+                        "content": "用户猜错时，先否定，再用形态或含义差异引导继续联想，不直接剧透。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    },
+                    {
+                        "id": "H_T07_05",
+                        "content": "用户提问\"是不是？\"类问题时，仅回答\"是/否/不完全是\"，保持神秘感。",
+                        "use_scope": [
+                            "NPC_GUIDE"
+                        ],
+                        "visibility": "npc_visible"
+                    }
+                ],
+                "answers": [
+                    {
+                        "id": "A_T07_1",
+                        "content": "用户回答与第一个字 fact 一致，则第一个字完成",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ]
+                    },
+                    {
+                        "id": "A_T07_2",
+                        "content": "用户回答与第二个字 fact 一致，则第二个字完成",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ]
+                    },
+                    {
+                        "id": "A_T07_3",
+                        "content": "用户回答与第三个字 fact 一致，则第三个字完成",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ]
+                    },
+                    {
+                        "id": "A_T07_4",
+                        "content": "用户回答与第四个字 fact 一致，则第四个字完成",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ]
+                    },
+                    {
+                        "id": "A_T07_FULL",
+                        "content": "当四个字都完成，则任务完成",
+                        "use_scope": [
+                            "ANSWER_JUDGE"
+                        ]
+                    }
+                ],
+                "visuals": []
+            }
+        },
+        {
+            "task_id": "T08_FINALE",
+            "stage_name": "终幕：研学院合成 · 黎明将至",
+            "location": "研学院",
+            "target_location_coordinate": {
+                "latitude": 36.96284,
+                "longitude": 111.97331
+            },
+            "npc": "研学院主人",
+            "npc_role": "义军密使",
+            "task_type": "COMBINE_ITEMS",
+            "completion_mechanism": [
+                "COMBINE_SUCCESS"
+            ],
+            "objective_template": "当五枚残片全部归位，孤城的城防全貌将展露无遗。请在研学院完成合成，点燃烽火，引导义军总攻！",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_reward": {
+                "item_category": "",
+                "item_name": ""
+            },
+            "sub_tasks": [],
+            "next_task_id": "END",
+            "task_knowledge": {
+                "facts": [],
+                "hints": [],
+                "answers": [],
+                "visuals": []
+            }
+        }
+    ]
+}

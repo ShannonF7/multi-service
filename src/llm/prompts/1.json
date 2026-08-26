@@ -1,0 +1,108 @@
+{
+  "script_metadata": {
+    "script_id": "ZBGB_AWD_001",
+    "title": "孤城黎明",
+    "version": "1.1.0",
+    "era_background": "天下动荡，\"玄冥宗\"把持朝政，义军\"破晓\"欲攻破其最后要塞\"孤城\"。"
+  },
+  "era_background": "",
+  "mechanism": "四象之力（青龙、白虎、朱雀、玄武）的照片分布在张壁的东南西北四个方位。",
+  "tasks": [
+    {
+      "task_id": "T01_PROLOGUE",
+      "stage_name": "序幕：暗夜密令",
+      "location": "南堡门",
+      "npc": "{{NPC_T01_NAME}}",
+      "npc_role": "{{NPC_T01_ROLE}}",
+      "objective_template": "获取入城凭证（门票）与任务指引，前往堡墙脚下通过考验。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": null,
+      "next_task_id": "T02_FIRST_TRIAL"
+    },
+    {
+      "task_id": "T02_FIRST_TRIAL",
+      "stage_name": "第一幕：朱雀考验 · 获取信任",
+      "location": "堡墙脚下",
+      "npc": "周先生",
+      "npc_role": "城内风水师/主持人",
+      "objective_template": "完成九连环挑战，证明巧思，获取'通行令牌'。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": "通行令牌, 布防图碎片一",
+      "next_task_id": "T03_TUNNEL_SEEK"
+    },
+    {
+      "task_id": "T03_TUNNEL_SEEK",
+      "stage_name": "第二幕：地道潜行 · 密道寻踪 (线索)",
+      "location": "南堡门到地道路上沿途",
+      "npc": null,
+      "npc_role": null,
+      "objective_template": "沿途寻找星宿对照图线索，通过拍照判断获得谜语，根据四个谜语推断出地道入口。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": null,
+      "next_task_id": "T04_TUNNEL_CROSS"
+    },
+    {
+      "task_id": "T04_TUNNEL_CROSS",
+      "stage_name": "第二幕：地道潜行 · 密道寻踪 (穿越)",
+      "location": "城内密道",
+      "npc": null,
+      "npc_role": null,
+      "objective_template": "悄声穿越密道，并在出口回答守卫提问，（回答地道洞口数）。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": "布防图残片二",
+      "next_task_id": "T05_DYNAMIC_FOOD"
+    },
+    {
+      "task_id": "T05_DYNAMIC_FOOD",
+      "stage_name": "第三幕：醋坊暗号 · 五味辨踪",
+      "location": "城内醋坊",
+      "npc": "醋坊掌柜",
+      "npc_role": "义军内应",
+      "objective_template": "通过品尝辨认暗号，并以**购买特定[SLOT: FOOD_ITEM_T05]**（失败可购买获得提示）的名义，获得下一线索。",
+      "selected_item": "张壁乌梅酒",
+      "npc_dialogue": "不错，看来你们确实是行家！听说有人对蛋、花生之物避讳，这坛**寒梅映月（张壁乌梅酒）**是内应特地为你们准备的，绝无蛋、花生，你带着它去茗香阁，他会明白的。",
+      "item_gained": "下一线索（茗香阁）, 布防图碎片三",
+      "next_task_id": "T06_DYNAMIC_TEA"
+    },
+    {
+      "task_id": "T06_DYNAMIC_TEA",
+      "stage_name": "第四幕：茶舍密报 · 真伪甄别",
+      "location": "茗香阁",
+      "npc": "茶舍主人",
+      "npc_role": "义军内应",
+      "objective_template": "完成茶叶与词牌的对应任务，并通过**购买特定[SLOT: MEMORABILIA_T06]**的名义获取布防图碎片四。",
+      "selected_item": "张壁手绘木牌",
+      "npc_dialogue": "完成对应后，你们需以购买这件特殊的**山河令（张壁手绘木牌）**作为交换，它必须是稀有之物，我才敢把布防图碎片交给你们。此物不沾荤腥，未触花生，洁净无染，方可信你。",
+      "item_gained": "布防图碎片四",
+      "next_task_id": "T07_FINAL_CHESS"
+    },
+    {
+      "task_id": "T07_FINAL_CHESS",
+      "stage_name": "第五幕：棋院终局 · 智取残图",
+      "location": "城内棋院",
+      "npc": "棋院主人",
+      "npc_role": "隐士/中立",
+      "objective_template": "协助复盘'守城棋局'，找出关键一着，若抽取坐标重复，可**购买[SLOT: RETRY_GIFT]**获得重新抽取的机会。",
+      "selected_item": "张壁手绘木牌",
+      "npc_dialogue": "若不想重头再来，老夫这里倒有些青鸾纹木令（张壁手绘木牌），权当是以物换物，弥补这局棋的变数吧。此物经山泉洗过三遍，无尘无垢，更不沾荤腥果仁，清净如初。",
+      "item_gained": "布防图残片五",
+      "next_task_id": "T08_FINALE"
+    },
+    {
+      "task_id": "T08_FINALE",
+      "stage_name": "终幕：研学院合成 · 黎明将至",
+      "location": "研学院",
+      "npc": null,
+      "npc_role": "主持人",
+      "objective_template": "将四象之力的照片对应成功，可将五枚布防图残片合成完整图纸，送出城外。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": null,
+      "next_task_id": "END"
+    }
+  ]
+}

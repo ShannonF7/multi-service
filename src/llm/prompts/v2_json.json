@@ -1,0 +1,489 @@
+{
+    "system_config": {
+        "script_metadata": {
+            "script_id": "ZBGB_V2_001",
+            "title": "张壁：星野藏甲",
+            "version": "2.0.0",
+            "style": "历史沉浸，解谜探索",
+            "recommended_group_size": "4-6人",
+            "era_background": "受现代天工院委托，文明回溯者进入古堡，修复断裂的历史记忆。见证一支军队如何从“蛰伏”走向“守护”。"
+        },
+        "data_model_notes": "基于v2.txt生成的剧本配置。"
+    },
+    "four_deities_collection": {
+        "mechanism": "寻找全城唯一的“铁骨”孤证，沿着星宿轨迹入城，完成三座戏台的秘密任务，见证铁骨化魂。",
+        "final_action": "在棋院破译‘气生道成’，感悟张壁守护之道。"
+    },
+    "tasks": [
+        {
+            "task_id": "T01_PROLOGUE",
+            "stage_name": "序章：城外哨兵 · 唯一的铁证",
+            "location": "关帝庙（南堡门外一楼）",
+            "target_location_coordinate": {
+                "latitude": 36.96195,
+                "longitude": 111.97355
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "NPC_INTERACTION",
+            "completion_mechanisms": ["NPC_DIALOGUE_COMPLETE"],
+            "objective_template": "在关帝庙寻找线索。秘密任务：找到第一座戏台。关卡游戏：慧眼识铁，识破‘哨兵’真面目。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "线索1",
+                "item_description": "台上演的是关公的忠义，台下站的是身披泥甲的铁哨兵。"
+            }],
+            "tell": "【听风】：屋檐铜铃清脆，如金戈撞击。\n\n【守岁人】：各位回溯者，欢迎来到张壁古堡。在正式进城之前，我们必须先在城外看清这座堡垒的底色。\n很多人以为这只是一座普通的关帝庙，但请注意，这里藏着一个千年的秘密。当年大军兵临城下，统帅做出了一个惊人的决定：‘全员卸甲，化兵为民’。所有的兵器铠甲都被埋藏，但为了留住最后的军魂，统帅命工匠融化一副最精良的玄铁重甲为底，外用泥塑将这副铁甲包裹，塑成了一尊神像，立于城外。它名为拜神，实为‘哨兵’。一旦泥胎震动，便是铁骨共鸣，预示敌袭。\n这就是张壁的秘密——‘外圆（泥）内方（铁）’。泥土是和平的伪装，铁骨是战争的记忆。",
+            "sub_tasks": [],
+            "next_task_id": "T02_ACT1_KUI_STAR"
+        },
+        {
+            "task_id": "T02_ACT1_KUI_STAR",
+            "stage_name": "第一幕：高台观阵 · 奎星行军",
+            "location": "魁星楼（南堡门二楼）",
+            "target_location_coordinate": {
+                "latitude": 36.96191,
+                "longitude": 111.97358
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "登上魁星楼，俯瞰古堡，识破‘行军阵’的真相。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "STORY_UNLOCK",
+                "item_name": "奎星见证，入阵！"
+            }],
+            "tell": "【听风】：高处风声凛冽，无铃。\n\n【守岁人】：我们不走下面的城门洞，那是百姓走的路。既然我们握住了铁骨的秘密，就要走将领的路——登楼入城。\n站在魁星楼这个制高点，请俯瞰脚下的张壁堡。其实张壁古堡正对应天上的‘奎宿’。奎宿形如‘沟渎’，更像一个‘大步跨越的人’，主行军。\n真相是：这不只是村落，这是一座‘行军阵’。统帅利用弯曲巷道，让军队虽然化整为零住在民居，却时刻保持着‘行进’的态势。这些弯道，更是巷战中天然的盾牌，让敌人进得来，看不透。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T02_S1_STAR_ARRAY",
+                    "location": "魁星楼",
+                    "target_location_coordinate": {
+                        "latitude": 36.96191,
+                        "longitude": 111.97358
+                    },
+                    "game": "关卡游戏2：【星阵对位】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "魁星楼下用今法观古星，你可曾发现什么？",
+                        "ai_answer_prompt": "玩家需要提到看到了一个拿着望远镜的古人。",
+                        "correct_answer": "我看到了一个拿着望远镜的古人"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "行军阵真相已破。"
+                    }]
+                }
+            ],
+            "next_task_id": "T03_ACT2_FACELESS"
+        },
+        {
+            "task_id": "T03_ACT2_FACELESS",
+            "stage_name": "第二幕：无面统帅 · 隐忍守望",
+            "location": "可罕庙",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "在可罕庙寻找第二座戏台，并面对无面统帅的抉择。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "线索2",
+                "item_description": "台上的角儿都有名有姓，台下的真英雄却是个哑巴。"
+            }],
+            "tell": "【听风】：屋檐铃铛，声音沉闷。\n\n【守岁人】：顺着龙脊进城，来到第二座戏台。设计这大阵的人，就坐在对面——可罕王。他就是那副城外铁甲的主人。\n但奇怪的是，史书中没有他的名字。刘武周？李世民？斛律光？ 真相是：他抹去了自己的脸。 因为他知道，城外的‘泥包铁’一旦暴露，就是谋反大罪，全城尽灭。为了保全这几千个兄弟的命，他选择成为一个‘无名氏’。\n他坐在戏台下，看着台上演尽了帝王将相的悲欢，自己却做一个哑巴。听那屋檐下的木铎声，木头撞击金属，声音传不远。这正是他的命令：‘隐忍，把秘密烂在肚子里。’",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T03_S1_SECRET_STAGE",
+                    "location": "可罕庙",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "秘密任务2：第二座戏台",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "你看到了什么？（提示：寻找第二座戏台）",
+                        "ai_answer_prompt": "玩家需要提到在可罕庙看到了一座戏台。",
+                        "correct_answer": "我在可罕庙看到了一座戏台"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "STORY_UNLOCK",
+                        "item_name": "最压抑的阶段，统帅隐忍。"
+                    }]
+                },
+                {
+                    "sub_task_id": "T03_S2_SILENT_GAZE",
+                    "location": "可罕庙",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "关卡游戏3：【无言的凝视】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "凝视那位面目模糊的可罕像10秒钟。如果你是他，为了保护兄弟，你会选择留名还是无名？",
+                        "ai_answer_prompt": "玩家回答无名或留名皆可，需有合理理由。",
+                        "correct_answer": "无名"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "无名比有名更伟大。"
+                    }]
+                }
+            ],
+            "next_task_id": "T04_ACT3_TUNNEL"
+        },
+        {
+            "task_id": "T04_ACT3_TUNNEL",
+            "stage_name": "第三幕：地隐星微 · 绝境退路",
+            "location": "地道",
+            "target_location_coordinate": {
+                "latitude": 36.961943,
+                "longitude": 111.973174
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "深入地道，寻找当年的生存痕迹与生路。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "STORY_UNLOCK",
+                "item_semantic": "冲出黑暗，前方就是生机。"
+            }],
+            "tell": "【听风】：地下无光无铃，只有回音。\n\n【守岁人】：如果地面的‘泥包铁’和‘奎宿阵’都守不住了，怎么办？ 统帅留了最后一步棋——地下。\n走进这地道，这里是星光照不到的死角。 每一个马槽、每一个指挥洞、每一口通向地面的气孔，都证明了这绝不是临时的避难所，而是一个长期的地下兵营。 在这阴冷的地下，没有身份，没有铃声，只有活下去的本能。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T04_S1_DARK_BREAK",
+                    "location": "地道",
+                    "target_location_coordinate": {
+                        "latitude": 36.961943,
+                        "longitude": 111.973174
+                    },
+                    "game": "关卡游戏4：【暗夜突围】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "阴暗的地道内，生路究竟在哪里？你看到了什么？",
+                        "ai_answer_prompt": "玩家需提到马厩、指挥地点或逃生出口。",
+                        "correct_answer": "我看到了马厩"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "找到生路。"
+                    }]
+                }
+            ],
+            "next_task_id": "T05_ACT4_DRAGON_CRANE"
+        },
+        {
+            "task_id": "T05_ACT4_DRAGON_CRANE",
+            "stage_name": "第四幕：时空交错 · 龙鹤祈愿",
+            "location": "龙鹤福照壁",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "在照壁雕刻中，准确指出隐藏的“龙身”和“鹤形”在哪里。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "STORY_UNLOCK",
+                "item_name": "先辈的苦心，后人收到了。"
+            }],
+            "tell": "【听风】：市井喧闹，生活气息。\n\n【守岁人】：从地道出来，我们走过了一段漫长的路，像是从唐朝走到了明清。 眼前这座‘龙鹤福’照壁，并不是那群士兵建造的，而是他们的后代建造的。\n士兵们一辈子躲在黑暗的地道和沉默的盔甲里，就是为了让子孙后代能正大光明地建起这座照壁。龙代表尊贵，鹤代表长寿，福代表安康。这是先辈用‘泥包铁’的隐忍，换来的后世繁华。士兵没能看到的风景，他们的孩子看到了。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T05_S1_FIND_LUCKY",
+                    "location": "龙鹤福照壁",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "关卡游戏5：【寻找吉祥】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "这是一个眼力游戏。请指出照壁上的龙和鹤在哪里？",
+                        "ai_answer_prompt": "玩家需指出龙在福的左偏旁，鹤在福的右半部分。",
+                        "correct_answer": "龙在福的左偏旁上，鹤在福的右半部分"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "找到龙鹤。"
+                    }]
+                }
+            ],
+            "next_task_id": "T06_ACT5_CENTRAL_EARTH"
+        },
+        {
+            "task_id": "T06_ACT5_CENTRAL_EARTH",
+            "stage_name": "第五幕：中宫定数 · 岁月流转",
+            "location": "中央戊己土（大型节气日晷）",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "根据当前时间，找到距离当日最近的节气。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "STORY_UNLOCK",
+                "item_name": "时间流转，杀气已消。"
+            }],
+            "tell": "【听风】：风声柔和。\n\n【守岁人】：来到古堡的心脏——中央戊己土。这里有一个巨大的‘节气日晷’。\n对于那支军队来说，这里是他们彻底转变的地方。以前，他们看日影是为了计算‘何时出征、何时换岗’。 后来，他们在这里看日影，是为了计算‘何时谷雨播种、何时霜降收割’。 日影每移一寸，铁骨就软一分，泥土就厚一寸。 这里是他们从‘杀人的兵’变成‘种地的民’的见证。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T06_S1_SOLAR_TERM",
+                    "location": "中央戊己土",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "关卡游戏6：【日影定节气】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "根据当前时间找到距离当日最近的节气。",
+                        "ai_answer_prompt": "玩家需回答正确的节气名称。",
+                        "correct_answer": "小寒"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "确认节气。"
+                    }]
+                }
+            ],
+            "next_task_id": "T07_ACT6_COEXISTENCE"
+        },
+        {
+            "task_id": "T07_ACT6_COEXISTENCE",
+            "stage_name": "第六幕：枯荣共生 · 铁骨化魂",
+            "location": "槐抱柳",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["STAFF_CONFIRM"],
+            "objective_template": "在槐抱柳树下，两人一组摆出“守护/拥抱”的姿势合影。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "STORY_UNLOCK",
+                "item_name": "枯木逢春，生死相依。"
+            }],
+            "tell": "【听风】：木叶沙沙声。\n\n【守岁人】：这棵树，是张壁精神的图腾。 你们看，外面的老槐树早已枯死，那象征着死去的战争（旧铁骨）； 但里面的柳树却郁郁葱葱，那象征着新生的和平（新泥胎）。\n老槐用坚硬的躯壳，死死护住了柔嫩的柳枝。 这正是那支军队的命运：父辈化作了坚硬的泥土和枯木，才让子孙像柳枝一样在怀中发芽。 这种‘生死相依’，就是这支军队最后的归宿。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T07_S1_GROUP_PHOTO",
+                    "location": "槐抱柳",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "关卡游戏7：【共生合影】",
+                    "task_type": "PHOTO_SCAVENGER_HUNT",
+                    "completion_mechanisms": ["STAFF_CONFIRM"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "target_photo_name": "守护合影",
+                        "target_photo_description": "两人一组（或团队），摆出一个“守护/拥抱”的姿势（一人张开双臂，一人依偎），在树下合影留念。",
+                        "ai_judgment_prompt": "Check if the photo shows people in a hugging or protecting pose under a tree."
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "合影完成。"
+                    }]
+                }
+            ],
+            "next_task_id": "T08_ACT7_ALLIANCE"
+        },
+        {
+            "task_id": "T08_ACT7_ALLIANCE",
+            "stage_name": "第七幕：乱世同盟 · 实用求生",
+            "location": "神庙群（兴隆寺/三大士殿/真武殿）",
+            "target_location_coordinate": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "在神庙群中寻找信仰混杂的证据，并找到第三座戏台。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "CLUE_FRAGMENT",
+                "item_name": "线索3：戏演完了，妆卸了，他们接受了自己不再是“兵”，而是“张壁人”的命运。"
+            }],
+            "tell": "【听风】：风铃材质混杂，声音杂乱。\n\n【守岁人】：最后看看他们的精神世界。这里的风铃声最乱，因为信仰最杂。你们会发现，佛像旁边站着道士。\n这不是深奥的宗教融合，而是乱世中‘左手拜佛，右手拜道’的极致求生欲。 当那尊唯一的铁甲被封印，士兵们极度缺乏安全感。 ‘管他是佛是道，能保佑我活着的，我都拜。’泥包铁是身体的伪装，而这混乱的佛道同盟，是他们灵魂的避难所。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T08_S1_MIX_FIND",
+                    "location": "神庙群",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "关卡游戏8：【找混搭】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "进入殿宇，找出殿内一处具体的“违和点”或“融合点”。",
+                        "ai_answer_prompt": "玩家需提到如左佛右道等混搭现象。",
+                        "correct_answer": "我找到了殿内左边是佛教雕塑右面是道教雕塑"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "活着，比什么都重要。"
+                    }]
+                },
+                {
+                    "sub_task_id": "T08_S2_SECRET_STAGE",
+                    "location": "二郎庙",
+                    "target_location_coordinate": {
+                        "latitude": 0.0,
+                        "longitude": 0.0
+                    },
+                    "game": "秘密任务3：第三座戏台",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "你看到了什么？（提示：寻找第三座戏台）",
+                        "ai_answer_prompt": "玩家需要提到在二郎庙看到了一座戏台。",
+                        "correct_answer": "我在二郎庙看到了一座戏台"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "STORY_UNLOCK",
+                        "item_name": "神庙群里找到内心的平静。"
+                    }]
+                }
+            ],
+            "next_task_id": "T09_FINALE_CHESS"
+        },
+        {
+            "task_id": "T09_FINALE_CHESS",
+            "stage_name": "终章：气生道成 · 守护真谛",
+            "location": "棋院",
+            "target_location_coordinate": {
+                "latitude": 36.963472,
+                "longitude": 111.97305
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "LOCATION_AI_PUZZLE",
+            "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+            "objective_template": "在棋院辨认匾额上的四个字，破解张壁千年的秘密。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "STORY_UNLOCK",
+                "item_name": "任务完成。风铃止息，星野长明。"
+            }],
+            "tell": "【听风】：风铃归于平静。\n\n【守岁人】：所有的路都走完了，我们来到终点——棋院。 北门对应天上的‘壁宿’，意为‘铜墙铁壁’。\n抬头看棋院的那块匾额，上面写着四个篆书大字。这四个字，道尽了张壁千年的秘密。 ‘气’——是士兵曾经的杀伐之气（铁）； ‘生’——是槐抱柳展现的生生不息（泥）； ‘道’——是最终悟出的守护之道。 只有化掉了杀气，养出了生气，才成就了张壁的大道。",
+            "sub_tasks": [
+                {
+                    "sub_task_id": "T09_S1_FINAL_PUZZLE",
+                    "location": "棋院",
+                    "target_location_coordinate": {
+                        "latitude": 36.963472,
+                        "longitude": 111.97305
+                    },
+                    "game": "终极挑战：【辨字破局】",
+                    "task_type": "AI_INTERACTIVE_PUZZLE",
+                    "completion_mechanisms": ["AI_ANSWER_CORRECT"],
+                    "completion_criteria": {},
+                    "triggers": [],
+                    "task_data": {
+                        "ai_question": "匾额上的篆书，第一个字代表呼吸与能量，第二个字代表生命，第三个字代表路与真理，第四个字代表圆满。这四个字是？",
+                        "ai_answer_prompt": "玩家需回答：气生道成。",
+                        "correct_answer": "气生道成"
+                    },
+                    "virtual_rewards": [{
+                        "item_category": "PASS_TOKEN",
+                        "item_name": "气生道成，破局。"
+                    }]
+                }
+            ],
+            "next_task_id": "T10_ENDING"
+        },
+        {
+            "task_id": "T10_ENDING",
+            "stage_name": "结局：风铃止息 · 星野长明",
+            "location": "棋院",
+            "target_location_coordinate": {
+                "latitude": 36.963472,
+                "longitude": 111.97305
+            },
+            "npc": "守岁人",
+            "npc_role": "领队/NPC",
+            "task_type": "NPC_INTERACTION",
+            "completion_mechanisms": ["NPC_DIALOGUE_COMPLETE"],
+            "objective_template": "聆听最后的结局。",
+            "completion_criteria": {},
+            "triggers": [],
+            "dynamic_data_slot": null,
+            "virtual_rewards": [{
+                "item_category": "ENDING",
+                "item_name": "任务完成"
+            }],
+            "tell": "【AI回答】：破局你们找对了这四个字——气、生、道、成。 但你们真的读懂它了吗？\n‘气’，是那尊城外神像里藏着的杀伐之气（铁）。它是兵的骨头，刚硬、不屈，但也冰冷。 ‘生’，是那棵槐抱柳展现的生生不息（泥）。它是民的血肉，柔软、包容，充满温度。\n这支军队用了一千年去感悟：只有当‘铁之气’甘愿化作泥土，去滋养‘柳之生’时，才成就了张壁的‘道’。 这个‘道’，不是修仙问道，而是化剑为犁，守护苍生。\n\n【秘密任务彩蛋】：回望这一路，我们其实只看了一场戏，一场演了一千年的大戏。\n记得第一座戏台吗？那是演给敌人看的。台下站着那是那尊泥包铁的哨兵，那是伪装。 记得第二座戏台吗？那是演给历史看的。对面坐着那位无面统帅，那是隐忍。 记得第三座戏台吗？那是演给神明看的。士兵们在那里祈祷，那是释怀。\n其实，这场大戏真正的主角，从来不是台上的帝王将相，而是台下那些脱了军装、拿起锄头的无名士兵。 他们把战争关进了黑暗的地道，把阳光留给了地面的孩子。\n\n【结局】：那尊城外的泥包铁，最终没有破土而出。它烂在了泥里，却化作了这座古堡最坚硬的脊梁。\n我们一直在找‘甲’，其实最好的铠甲，不是穿在身上的铁，而是守在心里的墙。 统帅留下的秘密，不是为了反攻，而是为了提醒后人： 和平是多么来之不易，以至于需要用厚厚的泥土，去封印那冰冷的铁骨。\n泥包铁，包住的不是兵器，而是千年的和平。\n\n张宿入网，奎宿行军，壁宿守成。 恭喜各位回溯者，你们读懂了那位无面统帅的心，也找回了张壁的魂。\n愿世间再无泥包铁，愿人间处处槐抱柳。\n任务完成。风铃止息，星野长明。 各位，我们有缘再会！",
+            "sub_tasks": [],
+            "next_task_id": "END"
+        }
+    ]
+}

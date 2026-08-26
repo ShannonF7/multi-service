@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+from src.rag.service import graph_discovery_service as service
+from src.rag.service import graph_sync_service as sync_service
+
+
+class FakeResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def single(self):
+        return self.rows[0] if self.rows else None
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class FakeSession:
+    def __init__(self, handler):
+        self.handler = handler
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def run(self, query, **params):
+        self.calls.append((query, params))
+        return FakeResult(self.handler(query, params))
+
+
+class FakeDriver:
+    def __init__(self, session):
+        self.session_value = session
+
+    def session(self, **_kwargs):
+        return self.session_value
+
+
+def test_search_published_entities_returns_ranked_page(monkeypatch):
+    def handler(query, params):
+        if "count(node) AS total" in query:
+            return [{"total": 3}]
+        return [
+            {"item": {"node_id": "10", "name": "Alpha", "node_type": "poi", "degree": 4, "match_score": 100}},
+            {"item": {"node_id": "11", "name": "Alpha Hall", "node_type": "building", "degree": 2, "match_score": 80}},
+        ]
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.search_published_entities("4", "Alpha", limit=2, offset=0)
+
+    assert result["total"] == 3
+    assert result["has_more"] is True
+    assert [item["node_id"] for item in result["items"]] == ["10", "11"]
+    page_call = next(call for call in session.calls if "SKIP $offset" in call[0])
+    assert page_call[1]["search_query"] == "alpha"
+    assert page_call[1]["limit"] == 2
+
+
+def test_neighborhood_supports_offset_and_total(monkeypatch):
+    def handler(query, params):
+        if "OPTIONAL MATCH (root)-[:HAS_FACT]" in query:
+            return [{"root": {"node_id": "10", "name": "Root"}, "facts": []}]
+        if "WITH DISTINCT neighbor" in query:
+            return [{"total": 5}]
+        if "RETURN collect(neighbor" in query:
+            return [{"neighbors": [
+                {"node_id": "12", "name": "Second", "graph_depth": 1},
+                {"node_id": "13", "name": "Third", "graph_depth": 2},
+            ]}]
+        if "RETURN source.node_id AS source_node_id" in query:
+            return []
+        raise AssertionError(query)
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.get_published_neighborhood(
+        "4",
+        "10",
+        depth=2,
+        limit=2,
+        offset=1,
+        node_types=["poi"],
+        relation_types=["PUBLISHED_RELATION"],
+    )
+
+    assert result["found"] is True
+    assert result["total"] == 5
+    assert result["offset"] == 1
+    assert result["limit"] == 2
+    assert result["has_more"] is True
+    assert result["supernode"] is True
+    assert result["node_types"] == ["poi"]
+    assert result["relation_types"] == ["PUBLISHED_RELATION"]
+    page_call = next(call for call in session.calls if "SKIP $offset" in call[0])
+    assert page_call[1]["offset"] == 1
+    assert page_call[1]["node_types"] == ["poi"]
+    assert page_call[1]["relation_types"] == ["PUBLISHED_RELATION"]
+
+
+def test_blank_search_returns_graph_entry_nodes(monkeypatch):
+    def handler(query, params):
+        if "count(node) AS total" in query:
+            return [{"total": 1}]
+        return [{"item": {"node_id": "10", "name": "Entry", "degree": 8, "match_score": 0}}]
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.search_published_entities("4", "", limit=1)
+
+    assert result["total"] == 1
+    assert result["items"][0]["node_id"] == "10"
+    page_query, params = next(call for call in session.calls if "SKIP $offset" in call[0])
+    assert "WHEN $search_query = '' AND coalesce(toString(node.parent_node_id), '') = '' THEN 20" in page_query
+    assert params["search_query"] == ""
+
+def test_domain_overview_returns_nodes_facts_and_relations(monkeypatch):
+    def handler(query, params):
+        if "RETURN count(node) AS total" in query:
+            return [{"total": 2}]
+        if "RETURN count(relation) AS total" in query:
+            return [{"total": 1}]
+        if "RETURN count(fact) AS total" in query:
+            return [{"total": 1}]
+        if "RETURN node {" in query:
+            return [
+                {"item": {"node_id": "10", "name": "Root", "facts": [], "fact_count": 0}},
+                {"item": {"node_id": "11", "name": "Room", "facts": [{"key": "用途", "value": "教学"}], "fact_count": 1}},
+            ]
+        if "RETURN source.node_id AS source_node_id" in query:
+            return [{
+                "source_node_id": "10",
+                "target_node_id": "11",
+                "graph_relation_type": "PARENT_OF",
+                "relation_label": "层级归属",
+            }]
+        raise AssertionError(query)
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.get_published_domain_overview("4", node_limit=10, relation_limit=20)
+
+    assert result["total_nodes"] == 2
+    assert result["total_relations"] == 1
+    assert result["total_facts"] == 1
+    assert result["truncated"] is False
+    assert result["nodes"][1]["facts"][0]["value"] == "教学"
+    assert result["relations"][0]["graph_relation_type"] == "PARENT_OF"
+
+def test_node_detail_returns_all_facts_and_relation_metadata(monkeypatch):
+    def handler(query, params):
+        if "OPTIONAL MATCH (root)-[:HAS_FACT]" in query:
+            return [{
+                "root": {"node_id": "10", "name": "Root"},
+                "facts": [{"formal_property_id": "91", "key": "用途", "value": "教学"}],
+            }]
+        if "count(DISTINCT relation) AS total" in query:
+            return [{"total": 1}]
+        if "startNode(relation) AS source" in query:
+            return [{
+                "source_node_id": "10",
+                "source_name": "Root",
+                "target_node_id": "11",
+                "target_name": "Room",
+                "graph_relation_type": "PUBLISHED_RELATION",
+                "relation_code": "contains",
+                "relation_label": "包含",
+                "relation_category": "spatial",
+                "formal_relation_id": "81",
+                "confidence": 0.9,
+                "evidence_ids": ["300"],
+                "provenance_json": "[]",
+                "neighbor": {"node_id": "11", "name": "Room"},
+            }]
+        raise AssertionError(query)
+
+    session = FakeSession(handler)
+    monkeypatch.setattr(service, "resolve_published_domain_id", lambda value: value)
+    monkeypatch.setattr(service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = service.get_published_node_detail("4", "10")
+
+    assert result["found"] is True
+    assert result["facts"][0]["formal_property_id"] == "91"
+    assert result["relations"][0]["relation_category"] == "spatial"
+    assert result["relations"][0]["evidence_ids"] == ["300"]
+    assert result["neighbors"][0]["node_id"] == "11"
+    assert result["truncated"] is False
+
+def test_domain_stats_separates_hierarchy_spatial_and_semantic(monkeypatch):
+    row = {
+        "nodes": 8,
+        "facts": 12,
+        "relations": 15,
+        "published_relations": 9,
+        "semantic_relations": 4,
+        "spatial_relations": 5,
+        "hierarchy_relations": 6,
+        "domain_name": "Domain",
+        "last_sync_time": "2026-07-23T13:20:00Z",
+    }
+    session = FakeSession(lambda _query, _params: [row])
+    monkeypatch.setattr(sync_service, "_neo4j_driver", lambda: FakeDriver(session))
+
+    result = sync_service.neo4j_domain_stats("4")
+
+    assert result["relations"] == 15
+    assert result["published_relations"] == 9
+    assert result["semantic_relations"] == 4
+    assert result["spatial_relations"] == 5
+    assert result["hierarchy_relations"] == 6
+    query = session.calls[0][0]
+    assert "r.relation_category = 'spatial'" in query
+    assert "type(r) = 'PARENT_OF'" in query

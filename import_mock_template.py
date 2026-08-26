@@ -1,0 +1,687 @@
+import sys
+import os
+import json
+from uuid import UUID
+from sqlalchemy.orm import Session
+from src.database.session import SessionLocal
+from src.database.models import ScriptTemplate, GameTeam, UserMerchant, MerchantProduct
+
+def insert_required_template():
+    # 目标剧本 UUID
+    target_id = "b989331e-59fa-4d8f-86d4-fe0eb31b9a22"
+    
+    print(f"--- 正在向远程数据库插入完整剧本模板: {target_id} ---")
+    
+    # 完整剧本内容
+    template_content = {
+        "system_config": {
+            "script_metadata": {
+                "script_id": "ZBGB_AWD_001",
+                "title": "孤城黎明",
+                "version": "1.1.0",
+                "style": "古风武侠，悬疑解谜",
+                "recommended_group_size": "4-6人",
+                "era_background": "天下动荡，\"玄冥宗\"把持朝政，义军\"破晓\"欲攻破其最后要塞\"孤城\"。此城依山而建，易守难攻，唯有获得城内布防图，方能破城。你们，是潜入城内的义军内应。"
+            },
+            "data_model_notes": "该JSON包含所有任务，以及T05, T06, T07中用于动态调整的商品槽位（SLOT）及NPC话术模板。"
+        },
+        "four_deities_collection": {
+            "mechanism": "集齐四大神兽（青龙、白虎、雀、玄武）之力，在城外义军发动总攻前，于子时前找到并送出\"孤城布防图\"。",
+            "final_action": "最后在研学院合成需要四象之力。"
+        },
+        "tasks": [
+            {
+                "task_id": "T01_PROLOGUE",
+                "stage_name": "序幕：暗夜密令",
+                "location": "南堡门",
+                "position": {
+                    "latitude": 36.96195,
+                    "longitude": 111.97355
+                },
+                "npc": "{{NPC_T01_NAME}}",
+                "npc_role": "{{NPC_T01_ROLE}}",
+                "objective_template": "获取入城凭证（门票）与任务指引，前往堡墙脚下通过考验。",
+                "completion_criteria": {
+                    "criteria": [
+                        {
+                            "id": "C1",
+                            "type": "fact",
+                            "desc": "是否已获得入城凭证（门票）",
+                            "weight": 0.4
+                        },
+                        {
+                            "id": "C2",
+                            "type": "fact",
+                            "desc": "是否已获得任务指引",
+                            "weight": 0.4
+                        },
+                        {
+                            "id": "tone",
+                            "type": "degree",
+                            "desc": "语气是否礼貌、中立",
+                            "weight": 0.2
+                        }
+                    ],
+                    "pass_threshold": 0.7
+                },
+                "triggers": [
+                    {
+                        "priority": 100,
+                        "conditions": [
+                            {
+                                "type": "refusal",
+                                "operator": "==",
+                                "value": True
+                            }
+                        ],
+                        "action": {
+                            "assessment": "fail",
+                            "content": "既然你不想费力，那就买个指定商品来换取过关资格吧。"
+                        }
+                    },
+                    {
+                        "priority": 80,
+                        "conditions": [
+                            {
+                                "type": "completion",
+                                "operator": "==",
+                                "value": "not_completed"
+                            }
+                        ],
+                        "action": {
+                            "assessment": "info",
+                            "content": "你需要先获得入城凭证(门票）以及任务指引才能继续。"
+                        }
+                    },
+                    {
+                        "priority": 50,
+                        "conditions": [
+                            {
+                                "type": "fact",
+                                "id": "C1",
+                                "operator": ">=",
+                                "value": 1.0
+                            },
+                            {
+                                "type": "fact",
+                                "id": "C2",
+                                "operator": ">=",
+                                "value": 1.0
+                            },
+                            {
+                                "type": "degree",
+                                "id": "tone",
+                                "operator": "<",
+                                "value": 0.5
+                            }
+                        ],
+                        "action": {
+                            "assessment": "warning",
+                            "content": "事情做对了，不过注意下语气。守城兵若听见，你我都要掉脑袋。"
+                        }
+                    },
+                    {
+                        "priority": 10,
+                        "conditions": [
+                            {
+                                "type": "fact",
+                                "id": "C1",
+                                "operator": ">=",
+                                "value": 1.0
+                            },
+                            {
+                                "type": "fact",
+                                "id": "C2",
+                                "operator": ">=",
+                                "value": 1.0
+                            }
+                        ],
+                        "action": {
+                            "assessment": "success",
+                            "content": "事成！已获得入城凭证与任务指引，前往堡墙脚下通过考验吧。"
+                        }
+                    }
+                ],
+                "task_type": "NPC_INTERACTION",
+                "completion_mechanism": "NPC_DIALOGUE_COMPLETE",
+                "dynamic_data_slot": None,
+                "virtual_reward": {
+                    "item_category": "ACCESS_TOKEN",
+                    "item_semantic": "入城凭证与任务指引"
+                },
+                "sub_tasks": [],
+                "next_task_id": "T02_FIRST_TRIAL"
+            },
+            {
+                "task_id": "T02_FIRST_TRIAL",
+                "stage_name": "第一幕：朱雀考验 · 获取信任",
+                "location": "堡墙脚下",
+                "position": {
+                    "latitude": 36.96195,
+                    "longitude": 111.97355
+                },
+                "npc": "周先生",
+                "npc_role": "城内风水师",
+                "objective_template": "完成九连环挑战，证明巧思，获取\"通行令牌\"。",
+                "completion_criteria": {},
+                "triggers": [],
+                "task_type": "ROLEPLAY_INTERACTION",
+                "completion_mechanism": "STAFF_CONFIRM",
+                "dynamic_data_slot": None,
+                "virtual_reward": {
+                    "item_category": "CLUE_FRAGMENT",
+                    "item_semantic": "布防图碎片一"
+                },
+                "sub_tasks": [],
+                "next_task_id": "T03_TUNNEL_SEEK"
+            },
+            {
+                "task_id": "T03_TUNNEL_SEEK",
+                "stage_name": "第二幕：地道潜行 · 密道寻踪 (线索)",
+                "location": "南堡门到地道路上沿途",
+                "task_type": "LOCATION_AI_PUZZLE",
+                "completion_mechanism": "AI_ANSWER_CORRECT",
+                "objective_template": "沿途留意古堡内建筑与星宿的对应关系，到指定地点拍摄该景点的照片，让AI识别。",
+                "completion_criteria": {},
+                "triggers": [],
+                "dynamic_data_slot": None,
+                "virtual_reward": {
+                    "item_category": "CLUE_KEYWORD",
+                    "item_semantic": "最终数字：28"
+                },
+                "sub_tasks": [
+                    {
+                        "sub_task_id": "T03_S1",
+                        "location": "南堡门",
+                        "position": {
+                            "latitude": 36.96195,
+                            "longitude": 111.97355
+                        },
+                        "game": "捕捉张宿之影",
+                        "task_type": "PHOTO_SCAVENGER_HUNT",
+                        "completion_mechanism": "AI_IMAGE_JUDGE",
+                        "completion_criteria": {},
+                        "triggers": [],
+                        "task_data": {
+                            "target_photo_name": "南堡门建筑",
+                            "target_photo_description": "请拍摄古堡的‘南堡门’。南堡门作为古堡正门，对应南方朱雀七宿之‘张宿’。AI识别建筑通过后获得线索一。",
+                            "ai_judgment_prompt": "Is this image showing the South Gate (Nanbaomen) of Zhangbi Ancient Castle? Look for the distinctive stone archway and traditional gate structure."
+                        },
+                        "virtual_reward": {
+                            "item_category": "CLUE_KEYWORD",
+                            "item_semantic": "线索一：【南】风初动，朱雀展翼，一宿点亮天之【东】。"
+                        }
+                    },
+                    {
+                        "sub_task_id": "T03_S2",
+                        "location": "魁星楼",
+                        "position": {
+                            "latitude": 36.96191,
+                            "longitude": 111.97358
+                        },
+                        "game": "定格奎宿之形",
+                        "task_type": "PHOTO_SCAVENGER_HUNT",
+                        "completion_mechanism": "AI_IMAGE_JUDGE",
+                        "completion_criteria": {},
+                        "triggers": [],
+                        "task_data": {
+                            "target_photo_name": "魁星楼建筑",
+                            "target_photo_description": "请寻找并拍摄堡墙上的‘魁星楼’。其名取‘奎’宿谐音，对应西方白虎七宿之首‘奎宿’。AI识别建筑通过后获得线索二。",
+                            "ai_judgment_prompt": "Is this image showing the Kuixing Tower of Zhangbi Ancient Castle? It is a traditional pavilion structure situated on the fortress wall."
+                        },
+                        "virtual_reward": {
+                            "item_category": "CLUE_KEYWORD",
+                            "item_semantic": "线索二：【北】斗回旋，白虎抬首，二宿遥指地之【南】。"
+                        }
+                    },
+                    {
+                        "sub_task_id": "T03_S3",
+                        "location": "北堡门",
+                        "position": {
+                            "latitude": 36.96401,
+                            "longitude": 111.97321
+                        },
+                        "game": "寻找壁宿之镇",
+                        "task_type": "PHOTO_SCAVENGER_HUNT",
+                        "completion_mechanism": "AI_IMAGE_JUDGE",
+                        "completion_criteria": {},
+                        "triggers": [],
+                        "task_data": {
+                            "target_photo_name": "北堡门建筑",
+                            "target_photo_description": "请前往古堡北端拍摄‘北堡门’。此处地势险要，对应北方玄武七宿之‘壁宿’。AI识别建筑通过后获得线索三。",
+                            "ai_judgment_prompt": "Is this image showing the North Gate (Beibaomen) of Zhangbi Ancient Castle? It is a stone-built gate structure at the northern end of the main street."
+                        },
+                        "virtual_reward": {
+                            "item_category": "CLUE_KEYWORD",
+                            "item_semantic": "线索三：【西】风萧萧，玄武卧土，三宿定住了天之【北】。"
+                        }
+                    },
+                    {
+                        "sub_task_id": "T03_S4",
+                        "location": "星象文化展厅",
+                        "position": {
+                            "latitude": 36.96111,
+                            "longitude": 111.97343
+                        },
+                        "game": "感应心宿之光",
+                        "task_type": "PHOTO_SCAVENGER_HUNT",
+                        "completion_mechanism": "AI_IMAGE_JUDGE",
+                        "completion_criteria": {},
+                        "triggers": [],
+                        "task_data": {
+                            "target_photo_name": "星象文化展厅建筑",
+                            "target_photo_description": "请寻找并拍摄‘星象文化展厅’建筑。馆内承载着东方青龙‘心宿’的奥秘。AI识别建筑通过后获得线索四。",
+                            "ai_judgment_prompt": "Is this image showing the exterior of the Astrology Hall (Xingxiang Guan) in Zhangbi Ancient Castle?"
+                        },
+                        "virtual_reward": {
+                            "item_category": "CLUE_KEYWORD",
+                            "item_semantic": "线索四：【东】升日出，青龙咆哮，四宿呼应了天之【西】。"
+                        }
+                    },
+                    {
+                        "sub_task_id": "T03_S5_FINAL",
+                        "location": "任意位置",
+                        "position": {
+                            "latitude": 0.0,
+                            "longitude": 0.0
+                        },
+                        "game": "星官总数",
+                        "task_type": "AI_INTERACTIVE_PUZZLE",
+                        "completion_mechanism": "AI_ANSWER_CORRECT",
+                        "completion_criteria": {},
+                        "triggers": [],
+                        "task_data": {
+                            "ai_question": "你已游历四方，集齐了代表青龙、朱雀、白虎、玄武四象的线索。根据古代星象学，这四象合起来共由多少星宿组成？请回答数字。",
+                            "ai_answer_prompt": "玩家需要回答四象所含星宿的总数。 ",
+                            "correct_answer": "28"
+                        },
+                        "virtual_reward": {
+                            "item_category": "CLUE_KEYWORD",
+                            "item_semantic": "地道开启密码：28"
+                        }
+                    }
+                ],
+                "next_task_id": "T04_TUNNEL_CROSS"
+            },
+            {
+                "task_id": "T04_TUNNEL_CROSS",
+                "stage_name": "第二幕：地道潜行 · 密道寻踪 (穿越)",
+                "location": "城内密道",
+                "position": {
+                    "latitude": 36.96353,
+                    "longitude": 111.97111
+                },
+                "task_type": "ARRIVAL_TASK",
+                "completion_mechanism": "GPS_CHECK",
+                "objective_template": "穿过地道，在地道中探索张壁古堡，到达地道出口位置时解锁虚拟奖励",
+                "completion_criteria": {},
+                "triggers": [],
+                "dynamic_data_slot": None,
+                "virtual_reward": {
+                    "item_category": "CLUE_FRAGMENT",
+                    "item_semantic": "布防图残片二"
+                },
+                "sub_tasks": [],
+                "next_task_id": "T05_DYNAMIC_FOOD"
+            },
+            {
+                "task_id": "T05_DYNAMIC_FOOD",
+                "stage_name": "第三幕：醋坊暗号 · 五味辨踪",
+                "location": "醋坊",
+                "position": {
+                    "latitude": 36.968747,
+                    "longitude": 111.979764
+                },
+                "npc": "醋坊掌柜",
+                "npc_role": "义军内应",
+                "task_type": "PURCHASE_TASK",
+                "completion_mechanism": "PAYMENT_CALLBACK",
+                "objective_template": "玩家需接受\"闻香识醋\"挑战：先抽取并品尝一种目标醋样，随后在现场的六坛无标签醋缸中，仅凭嗅觉与味觉找出对应的那一坛。挑战成功或购买**[SLOT: FOOD_ITEM_T05]**作为掩护后，系统会将布防图碎片交付玩家。",
+                "completion_criteria": {},
+                "triggers": [],
+                "dynamic_data_slot": {
+                    "slot_key": "FOOD_ITEM_T05",
+                    "item_type": "食品",
+                    "store_name": "醋坊",
+                    "selection_criteria": {
+                        "inventory_priority": "库存最高",
+                        "allergy_constraint": "要求排除用户勾选的过敏原"
+                    },
+                    "npc_template": "想拿情报？先过我这关。这有六坛醋，你抽到的这味，若能在缸里找对，我就认你这个行家。实在找不着，买**{{动态商品名称}}**尝尝，我也算你过关，顺道把东西给你。",
+                    "system_actions": {
+                        "stock_update": "用户完成/购买后，更新库存",
+                        "merchant_notify": "向商户推送通知（含商品类别和过敏要求）"
+                    }
+                },
+                "virtual_reward": {
+                    "item_category": "CLUE_FRAGMENT",
+                    "item_semantic": "布防图碎片三"
+                },
+                "sub_tasks": [],
+                "next_task_id": "T06_DYNAMIC_TEA"
+            },
+            {
+                "task_id": "T06_DYNAMIC_TEA",
+                "stage_name": "第四幕：茶舍密报 · 真伪甄别",
+                "location": "茗香阁",
+                "position": {
+                    "latitude": 36.968988,
+                    "longitude": 111.979797
+                },
+                "npc": "茶舍主人",
+                "npc_role": "义军内应",
+                "task_type": "PURCHASE_TASK",
+                "completion_mechanism": "PAYMENT_CALLBACK",
+                "objective_template": "玩家需完成\"茶韵寻踪\"挑战：前往\"槐抱柳\"寻找刻有菊花与金银花形态的木牌并拍照；在茶楼内搜寻桑叶、红茶、普洱的隐藏线索。将五种茶与其特征正确配对后，向掌柜购买**[SLOT: MEMORABILIA_T06]**，系统会将布防图碎片交付玩家。",
+                "completion_criteria": {},
+                "triggers": [],
+                "dynamic_data_slot": {
+                    "slot_key": "MEMORABILIA_T06",
+                    "item_type": "食品",
+                    "store_name": "茗香阁",
+                    "selection_criteria": {
+                        "inventory_priority": "库存最高",
+                        "allergy_constraint": "无（仅考虑库存）"
+                    },
+                    "npc_template": "情报就在这茶楼里，但得看你懂不懂茶。槐抱柳那儿挂着牌子，楼里藏着条子，把菊花、金银花、桑叶、红茶、普洱都对上号。事成之后，点份**{{动态商品名称}}**，东西自会给你。"
+                },
+                "sub_tasks": [],
+                "virtual_reward": {
+                    "item_category": "CLUE_FRAGMENT",
+                    "item_semantic": "布防图碎片四"
+                },
+                "next_task_id": "T07_FINAL_CHESS"
+            },
+            {
+                "task_id": "T07_FINAL_CHESS",
+                "stage_name": "第五幕：棋院终局 · 智取残图",
+                "location": "城内棋院",
+                "position": {
+                    "latitude": 36.96361,
+                    "longitude": 111.97393
+                },
+                "npc": "棋院主人",
+                "npc_role": "隐士",
+                "task_type": "PHYSICAL_GAME",
+                "completion_mechanism": "STAFF_CONFIRM",
+                "objective_template": "玩家需在四大地点（三大士殿、空王行祠、吕祖阁、琉璃展厅）完成团队协作挑战，每完成一处可抽取一个棋盘坐标。集齐坐标后回到棋院复盘\"守城棋局\"。若抽到的坐标重复导致无法解局，可购买**[SLOT: RETRY_GIFT]**获取重新抽取坐标的机会。",
+                "completion_criteria": {},
+                "triggers": [],
+                "dynamic_data_slot": {
+                    "slot_key": "RETRY_GIFT",
+                    "item_type": "纪念品",
+                    "store_name": "研学院",
+                    "selection_criteria": {
+                        "inventory_priority": "库存最高",
+                        "allergy_constraint": "无"
+                    },
+                    "npc_template": "这棋局差一着都不行。坐标若是重了，便是天意弄人。不过，老夫这儿有**{{动态商品名称}}**，你若诚心想要，便以此物换个重来的机会，或许能破这死局。"
+                },
+                "sub_tasks": [
+                    {
+                        "sub_task_id": "T07_S1",
+                        "location": "三大士殿",
+                        "position": {
+                            "latitude": 36.96354,
+                            "longitude": 111.97317
+                        },
+                        "game": "极速传输线",
+                        "description": "在不使用手的情况下，通过一套由队员搭建的“传输通道”，以最快的速度将一颗“能量球”从起点运送到终点的杯子中。通过后可抽取棋盘坐标。",
+                        "task_type": "PHYSICAL_GAME",
+                        "completion_mechanism": "STAFF_CONFIRM"
+                    },
+                    {
+                        "sub_task_id": "T07_S2",
+                        "location": "空王行祠",
+                        "position": {
+                            "latitude": 36.96305,
+                            "longitude": 111.97325
+                        },
+                        "game": "团体巨画创作猜测",
+                        "description": "几个成员为一组，只有第一个成员知道绘画内容，剩下的成员猜测前面成员画的东西，并继续创作，最后一个人需要猜出正确答案。通过后可抽取棋盘坐标。",
+                        "task_type": "PHYSICAL_GAME",
+                        "completion_mechanism": "STAFF_CONFIRM"
+                    },
+                    {
+                        "sub_task_id": "T07_S3",
+                        "location": "吕祖阁",
+                        "position": {
+                            "latitude": 36.96407,
+                            "longitude": 111.97324
+                        },
+                        "game": "一圈到底",
+                        "description": "全队成员手拉手，在不用手的情况下，以最快速度让一个呼啦圈穿过每个人的身体。通过后可抽取棋盘坐标。",
+                        "task_type": "PHYSICAL_GAME",
+                        "completion_mechanism": "STAFF_CONFIRM"
+                    },
+                    {
+                        "sub_task_id": "T07_S4",
+                        "location": "琉璃展厅",
+                        "position": {
+                            "latitude": 36.96412,
+                            "longitude": 111.97302
+                        },
+                        "game": "默契考验",
+                        "description": "参与成员不可以沟通，需要按照裁判给出的某种要求进行排队要求。通过后可抽取棋盘坐标。",
+                        "task_type": "PHYSICAL_GAME",
+                        "completion_mechanism": "STAFF_CONFIRM"
+                    }
+                ],
+                "virtual_reward": {
+                    "item_category": "CLUE_FRAGMENT",
+                    "item_semantic": "布防图残片五"
+                },
+                "next_task_id": "T08_FINALE"
+            },
+            {
+                "task_id": "T08_FINALE",
+                "stage_name": "终幕：研学院合成 · 黎明将至",
+                "location": "研学院",
+                "position": {
+                    "latitude": 36.96284,
+                    "longitude": 111.97331
+                },
+                "npc_role": "主持人",
+                "task_type": "COMBINE_ITEMS",
+                "completion_mechanism": "COMBINE_SUCCESS",
+                "objective_template": "将四象之力的照片对应成功，可将五枚布防图残片合成完整图纸，送出城外。寅时三刻，布防图顺利送出。破晓时分，义军号角响彻山谷——孤城，终于迎来黎明。",
+                "completion_criteria": {},
+                "triggers": [],
+                "dynamic_data_slot": None,
+                "sub_tasks": [],
+                "next_task_id": "END"
+            }
+        ]
+    }
+
+    db = SessionLocal()
+    try:
+        # 检查是否已存在
+        existing = db.query(ScriptTemplate).filter(ScriptTemplate.id == UUID(target_id)).first()
+        if existing:
+            print("⚠️ 模板已存在，正在更新...")
+            existing.template = template_content
+            existing.is_active = True
+        else:
+            print("🆕 正在创建新模板...")
+            new_template = ScriptTemplate(
+                id=UUID(target_id),
+                name="孤城黎明（测试版）",
+                style="悬疑",
+                suitable_people=4,
+                template=template_content,
+                created_by="system",
+                is_active=True
+            )
+            db.add(new_template)
+        
+        db.commit()
+        print("✅ 成功同步剧本模板到远程数据库。")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 插入失败: {e}")
+    finally:
+        db.close()
+
+def setup_mock_data():
+    db = SessionLocal()
+    try:
+        # 1. 插入剧本模板 (已在上面完成，这里可以整合)
+        target_id = "b989331e-59fa-4d8f-86d4-fe0eb31b9a22"
+        template_content = {
+            "system_config": {
+                "script_metadata": {
+                    "script_id": "ZBGB_AWD_001",
+                    "title": "孤城黎明",
+                    "version": "1.1.0",
+                    "style": "古风武侠，悬疑解谜",
+                    "recommended_group_size": "4-6人",
+                    "era_background": "天下动荡，\"玄冥宗\"把持朝政，义军\"破晓\"欲攻破其最后要塞\"孤城\"。此城依山而建，易守难攻，唯有获得城内布防图，方能破城。你们，是潜入城内的义军内应。"
+                },
+                "data_model_notes": "该JSON包含所有任务，以及T05, T06, T07中用于动态调整的商品槽位（SLOT）及NPC话术模板。"
+            },
+            "four_deities_collection": {
+                "mechanism": "集齐四大神兽（青龙、白虎、朱雀、玄武）之力，在城外义军发动总攻前，于子时前找到并送出\"孤城布防图\"。",
+                "final_action": "最后在研学院合成需要四象之力。"
+            },
+            "tasks": [
+                {
+                    "task_id": "T01_PROLOGUE",
+                    "stage_name": "序幕：暗夜密令",
+                    "location": "南堡门",
+                    "position": {"latitude": 36.96195, "longitude": 111.97355},
+                    "npc": "神秘向导",
+                    "npc_role": "联络人",
+                    "objective_template": "获取入城凭证（门票）与任务指引，前往堡墙脚下通过考验。",
+                    "task_type": "NPC_INTERACTION",
+                    "completion_mechanism": "NPC_DIALOGUE_COMPLETE",
+                    "dynamic_data_slot": None,
+                    "virtual_reward": {"item_category": "ACCESS_TOKEN", "item_semantic": "入城凭证与任务指引"},
+                    "sub_tasks": [],
+                    "next_task_id": "T02_FIRST_TRIAL"
+                },
+                {
+                    "task_id": "T02_FIRST_TRIAL",
+                    "stage_name": "第一幕：朱雀考验 · 获取信任",
+                    "location": "堡墙脚下",
+                    "position": {"latitude": 36.96195, "longitude": 111.97355},
+                    "npc": "周先生",
+                    "npc_role": "城内风水师",
+                    "objective_template": "完成九连环挑战，证明巧思，获取\"通行令牌\"。",
+                    "task_type": "ROLEPLAY_INTERACTION",
+                    "completion_mechanism": "STAFF_CONFIRM",
+                    "dynamic_data_slot": None,
+                    "virtual_reward": {"item_category": "CLUE_FRAGMENT", "item_semantic": "布防图碎片一"},
+                    "sub_tasks": [],
+                    "next_task_id": "T03_TUNNEL_SEEK"
+                },
+                {
+                    "task_id": "T03_TUNNEL_SEEK",
+                    "stage_name": "第二幕：地道潜行 · 密道寻踪 (线索)",
+                    "location": "南堡门到地道路上沿途",
+                    "task_type": "LOCATION_AI_PUZZLE",
+                    "completion_mechanism": "AI_ANSWER_CORRECT",
+                    "objective_template": "沿途留意古堡内建筑与星宿的对应关系，到指定地点拍摄该景点的照片，让AI识别。",
+                    "dynamic_data_slot": None,
+                    "virtual_reward": {"item_category": "CLUE_KEYWORD", "item_semantic": "最终数字：28"},
+                    "sub_tasks": [
+                        {
+                            "sub_task_id": "T03_S1",
+                            "location": "南堡门",
+                            "game": "捕捉张宿之影",
+                            "task_type": "PHOTO_SCAVENGER_HUNT",
+                            "completion_mechanism": "AI_IMAGE_JUDGE",
+                            "task_data": {
+                                "target_photo_name": "南堡门建筑",
+                                "target_photo_description": "请拍摄古堡的‘南堡门’。南堡门作为古堡正门，对应南方朱雀七宿之‘张宿’。",
+                                "ai_judgment_prompt": "Is this image showing the South Gate of Zhangbi Ancient Castle?"
+                            },
+                            "virtual_reward": {"item_category": "CLUE_KEYWORD", "item_semantic": "线索一：【南】风初动，朱雀展翼，一宿点亮天之【东】。"}
+                        }
+                    ],
+                    "next_task_id": "T04_TUNNEL_CROSS"
+                },
+                {
+                    "task_id": "T04_TUNNEL_CROSS",
+                    "stage_name": "第二幕：地道潜行 · 密道寻踪 (穿越)",
+                    "location": "城内密道",
+                    "position": {"latitude": 36.96353, "longitude": 111.97111},
+                    "task_type": "ARRIVAL_TASK",
+                    "completion_mechanism": "GPS_CHECK",
+                    "objective_template": "穿过地道，在地道中探索张壁古堡，到达地道出口位置",
+                    "dynamic_data_slot": None,
+                    "virtual_reward": {"item_category": "CLUE_FRAGMENT", "item_semantic": "布防图残片二"},
+                    "sub_tasks": [],
+                    "next_task_id": "T05_DYNAMIC_FOOD"
+                },
+                {
+                    "task_id": "T05_DYNAMIC_FOOD",
+                    "stage_name": "第三幕：醋坊暗号 · 五味辨踪",
+                    "location": "醋坊",
+                    "position": {"latitude": 36.968747, "longitude": 111.979764},
+                    "npc": "醋坊掌柜",
+                    "npc_role": "义军内应",
+                    "task_type": "PURCHASE_TASK",
+                    "completion_mechanism": "PAYMENT_CALLBACK",
+                    "objective_template": "挑战成功或购买**[SLOT: FOOD_ITEM_T05]**作为掩护后，系统会将布防图碎片交付玩家。",
+                    "dynamic_data_slot": {
+                        "slot_key": "FOOD_ITEM_T05",
+                        "item_type": "食品",
+                        "store_name": "醋坊",
+                        "npc_template": "如果你表现出色，或者买点{{动态商品名称}}，我就把东西给你。"
+                    },
+                    "virtual_reward": {"item_category": "CLUE_FRAGMENT", "item_semantic": "布防图碎片三"},
+                    "sub_tasks": [],
+                    "next_task_id": "T06_DYNAMIC_TEA"
+                }
+            ]
+        }
+
+        # 2. 插入 Mock 团队
+        team_id = "d776880f-f8c2-4969-be32-3ac517618f2c"
+        team = db.query(GameTeam).filter(GameTeam.team_id == team_id).first()
+        if not team:
+            print(f"🆕 正在创建 Mock 团队: {team_id}")
+            new_team = GameTeam(
+                team_id=team_id,
+                binding_code="ZB888",
+                size=4,
+                aggregated_allergens="[\"花生\"]" # 模拟过敏原
+            )
+            db.add(new_team)
+
+        # 3. 插入 Mock 商户 (醋坊)
+        merchant_name = "醋坊"
+        merchant = db.query(UserMerchant).filter(UserMerchant.merchant_name == merchant_name).first()
+        if not merchant:
+            print(f"🆕 正在创建 Mock 商户: {merchant_name}")
+            new_merchant = UserMerchant(
+                user_id="merchant_uuid_001",
+                merchant_name=merchant_name,
+                location="张壁古堡内"
+            )
+            db.add(new_merchant)
+            
+            # 4. 插入 Mock 商品
+            print(f"🆕 正在为 {merchant_name} 创建 Mock 商品")
+            new_product = MerchantProduct(
+                product_id="prod_001",
+                merchant_id="merchant_uuid_001",
+                product_name="老陈醋",
+                category="食品",
+                price=25.0,
+                stock=100,
+                ingredients={"contains": [], "may_contain": []}
+            )
+            db.add(new_product)
+
+        db.commit()
+        print("✅ Mock 数据同步完成。")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Mock 数据同步失败: {e}")
+    finally:
+        db.close()
+
+if __name__ == "__main__":
+    insert_required_template()

@@ -1,0 +1,72 @@
+create table if not exists semantic_growth_runs (
+    id bigserial primary key,
+    growth_run_id varchar(64) not null unique,
+    thread_id varchar(128) not null unique,
+    domain_id varchar(128) not null,
+    scenic_id varchar(128),
+    seed_node_ids jsonb not null default '[]'::jsonb,
+    status varchar(32) not null default 'PENDING',
+    iteration integer not null default 0,
+    max_iterations integer not null default 1,
+    budget integer not null default 1,
+    created_by varchar(128),
+    stop_reason text,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    finished_at timestamptz
+);
+create index if not exists semantic_growth_runs_status_idx on semantic_growth_runs(status, created_at desc);
+
+create table if not exists semantic_growth_opportunities (
+    id bigserial primary key,
+    opportunity_id varchar(64) not null unique,
+    growth_run_id varchar(64) not null references semantic_growth_runs(growth_run_id) on delete cascade,
+    node_id varchar(255),
+    opportunity_type varchar(64) not null,
+    target_property varchar(128),
+    target_relation varchar(128),
+    priority double precision not null default 1,
+    reason text,
+    status varchar(32) not null default 'PENDING',
+    dedupe_key varchar(160) not null unique,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+create index if not exists semantic_growth_opportunities_run_idx on semantic_growth_opportunities(growth_run_id, status, priority desc);
+
+create table if not exists semantic_growth_step_records (
+    id bigserial primary key,
+    growth_run_id varchar(64) not null references semantic_growth_runs(growth_run_id) on delete cascade,
+    opportunity_id varchar(64),
+    step_name varchar(64) not null,
+    status varchar(32) not null,
+    input_ref jsonb not null default '{}'::jsonb,
+    output_ref jsonb not null default '{}'::jsonb,
+    model_name varchar(128),
+    tool_name varchar(128),
+    error text,
+    started_at timestamptz not null default now(),
+    finished_at timestamptz
+);
+create index if not exists semantic_growth_steps_run_idx on semantic_growth_step_records(growth_run_id, started_at);
+
+create table if not exists semantic_growth_candidate_links (
+    id bigserial primary key,
+    growth_run_id varchar(64) not null references semantic_growth_runs(growth_run_id) on delete cascade,
+    opportunity_id varchar(64) not null references semantic_growth_opportunities(opportunity_id) on delete cascade,
+    candidate_id bigint not null references semantic_claim_candidates(id) on delete cascade,
+    iteration integer not null default 0,
+    created_at timestamptz not null default now(),
+    unique(growth_run_id, opportunity_id, candidate_id)
+);
+create index if not exists semantic_growth_candidate_links_run_idx on semantic_growth_candidate_links(growth_run_id, iteration);
+
+alter table semantic_growth_runs
+    add column if not exists status_reason_code varchar(64);
+alter table semantic_growth_runs
+    add column if not exists failed_opportunity_count integer not null default 0;
+alter table semantic_growth_runs
+    add column if not exists warning_codes jsonb not null default '[]'::jsonb;
+

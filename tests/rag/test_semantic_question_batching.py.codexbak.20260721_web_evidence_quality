@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import json
+from collections import Counter
+from http import HTTPStatus
+from types import SimpleNamespace
+
+from src.rag.schemas import EvidenceChunk, SemanticCompleteRequest
+from src.rag.service import semantic_completion_service as service
+from src.rag.service.completion_job_service import _normalize_mode_payload
+from src.rag.service.planner_service import plan_completion_questions
+
+
+def make_payload(
+    *,
+    mode: str,
+    target_fields: list[str],
+    relation_intents: list[str] | None = None,
+    node_type: str = "building",
+    metadata: dict | None = None,
+) -> SemanticCompleteRequest:
+    values = {"completion_mode": mode, **(metadata or {})}
+    return SemanticCompleteRequest.parse_obj(
+        {
+            "scenic_id": "4",
+            "node": {
+                "source_node_id": "946",
+                "name": "测试节点",
+                "node_type": node_type,
+                "scenic_name": "测试领域",
+            },
+            "target_fields": target_fields,
+            "relation_intents": relation_intents or [],
+            "subgraph_depth": 1,
+            "use_web_search": mode in {"deep", "batch"},
+            "use_web_extractor": mode in {"deep", "batch"},
+            "metadata": values,
+        }
+    )
+
+
+def make_chunk(index: int, question_id: str, field: str) -> EvidenceChunk:
+    return EvidenceChunk(
+        source_id=f"S{index}",
+        title=f"来源 {index}",
+        content=("可核验证据内容。" * 500),
+        quote=f"{field}的证据 {index}",
+        source="test",
+        source_type="provided",
+        source_url=f"https://example.test/{index}",
+        score=0.9,
+        question_id=question_id,
+        target_kind="property",
+        target_field=field,
+        final_evidence_score=0.9,
+    )
+
+
+def test_deep_and_batch_plan_all_questions_and_use_eight_as_batch_size():
+    fields = [f"属性{i}" for i in range(1, 11)] + ["时期"]
+    for mode in ("deep", "batch"):
+        payload = make_payload(mode=mode, target_fields=fields, relation_intents=["包含", "位于"])
+        normalized = SemanticCompleteRequest.parse_obj(_normalize_mode_payload(payload))
+        questions = plan_completion_questions(normalized)
+
+        assert len(questions) == 17
+        assert len([item for item in questions if item.temporal_role]) == 5
+        assert [len(batch) for batch in service.batch_completion_questions(normalized, questions)] == [8, 8, 1]
+
+
+def test_quick_three_is_batch_size_not_total_limit():
+    payload = make_payload(mode="quick", target_fields=[f"属性{i}" for i in range(1, 6)])
+    normalized = SemanticCompleteRequest.parse_obj(_normalize_mode_payload(payload))
+    questions = plan_completion_questions(normalized)
+
+    assert len(questions) == 5
+    assert [len(batch) for batch in service.batch_completion_questions(normalized, questions)] == [3, 2]
+
+
+def test_legacy_max_questions_is_only_a_batch_hint():
+    payload = make_payload(
+        mode="deep",
+        target_fields=[f"属性{i}" for i in range(1, 10)],
+        metadata={"max_questions": 4},
+    )
+    questions = plan_completion_questions(payload)
+
+    assert len(questions) == 9
+    assert [len(batch) for batch in service.batch_completion_questions(payload, questions)] == [4, 4, 1]
+
+
+def test_claim_extraction_batches_cover_every_question_and_deduplicate(monkeypatch):
+    payload = make_payload(mode="deep", target_fields=[f"属性{i}" for i in range(1, 11)])
+    questions = plan_completion_questions(payload)
+    chunks = [
+        make_chunk(index, question.question_id, question.target_field or "")
+        for index, question in enumerate(questions, start=1)
+    ]
+    calls_seen: list[list[str]] = []
+
+    def fake_call(_payload, extractor_chunks, trace_id=""):
+        calls_seen.append([str(chunk.question_id) for chunk in extractor_chunks])
+        calls = []
+        for chunk in extractor_chunks:
+            args = {
+                "predicate": chunk.target_field,
+                "object_value": f"{chunk.target_field}值",
+                "source_id": chunk.source_id,
+                "question_id": chunk.question_id,
+                "quote": chunk.quote,
+                "confidence": 0.9,
+            }
+            call = {"name": "extract_property_claim", "arguments": json.dumps(args, ensure_ascii=False)}
+            calls.extend([call, call])
+        return calls, {"tool_calls": len(calls)}
+
+    monkeypatch.setattr(service, "call_claim_extractor", fake_call)
+    claims, diagnostics = service.extract_claims_in_question_batches(payload, questions, chunks)
+
+    assert diagnostics["batch_count"] == 2
+    assert diagnostics["planned_question_count"] == 10
+    assert set(item for batch in calls_seen for item in batch) == {item.question_id for item in questions}
+    assert len(claims) == 10
+    assert len({claim.claim_id for claim in claims}) == 10
+
+
+def test_evidence_limit_is_applied_per_question_not_globally(monkeypatch):
+    payload = make_payload(
+        mode="deep",
+        target_fields=[f"属性{i}" for i in range(1, 10)],
+        metadata={"source_scope": ["domain_kb"], "domain_kb_limit_per_question": 8, "evidence_limit_per_question": 8},
+    )
+    questions = plan_completion_questions(payload)
+
+    def fake_search(_scenic_id, query, limit=5):
+        return [
+            {
+                "title": f"{query} 来源 {index}",
+                "content": f"{query} 可核验证据 {index}",
+                "source": "domain-kb-test",
+                "source_type": "domain_kb",
+                "source_doc_id": f"doc-{index}",
+                "chunk_id": index,
+                "score": 0.9,
+            }
+            for index in range(1, limit + 1)
+        ]
+
+    monkeypatch.setattr(service, "search_domain_kb", fake_search)
+    chunks, _ = service.collect_evidence(payload, trace_id="test-evidence", questions=questions)
+    counts = Counter(chunk.question_id for chunk in chunks)
+
+    assert len(chunks) == 72
+    assert set(counts.values()) == {8}
+    assert set(counts) == {question.question_id for question in questions}
+
+def test_extractor_evidence_json_is_complete(monkeypatch):
+    payload = make_payload(mode="deep", target_fields=[f"属性{i}" for i in range(1, 13)])
+    questions = plan_completion_questions(payload)
+    chunks = [
+        make_chunk(index, question.question_id, question.target_field or "")
+        for index, question in enumerate(questions, start=1)
+    ]
+
+    def fake_generation_call(**kwargs):
+        user_message = kwargs["messages"][1]["content"]
+        evidence_text = user_message.split("evidence_chunks: ", 1)[1]
+        parsed = json.loads(evidence_text)
+        assert len(parsed) == len(chunks)
+        assert len(evidence_text) > 18000
+        return SimpleNamespace(
+            status_code=HTTPStatus.OK,
+            output=SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=None, content=""))]
+            ),
+        )
+
+    monkeypatch.setattr(service.Generation, "call", fake_generation_call)
+    calls, metadata = service.call_claim_extractor(payload, chunks, trace_id="test-json")
+
+    assert calls == []
+    assert metadata["warning"] == "no_tool_calls"

@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Body, HTTPException
+from src.rag.service.semantic_candidate_store import update_semantic_candidate_status
+
+from .service import (growth_run_state, resume_growth_run, start_growth_run,
+    list_growth_runs_svc, pause_growth_run_svc, cancel_growth_run_svc)
+
+router = APIRouter(prefix="/rag/growth-runs", tags=["Semantic Growth"])
+
+
+@router.post("")
+def create_growth_run(payload: dict = Body(default={})):
+    if not str(payload.get("domain_id") or "").strip():
+        raise HTTPException(status_code=400, detail="domain_id is required")
+    try:
+        return start_growth_run(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/{growth_run_id}")
+def get_growth_run(growth_run_id: str):
+    try:
+        return growth_run_state(growth_run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{growth_run_id}/resume")
+def resume_growth(growth_run_id: str, payload: dict = Body(default={})):
+    try:
+        return resume_growth_run(growth_run_id, payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+
+@router.get("")
+def list_growth_runs(domain_id: str | None = None, status: str | None = None, limit: int = 50):
+    """List all growth runs, optionally filtered by domain and status."""
+    try:
+        return {"runs": list_growth_runs_svc(domain_id, status, limit)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{growth_run_id}/pause")
+def pause_growth(growth_run_id: str):
+    """Pause a running growth run."""
+    try:
+        result = pause_growth_run_svc(growth_run_id)
+        if not result:
+            raise HTTPException(status_code=409, detail="run cannot be paused in current state")
+        return result
+    except HTTPException as exc:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{growth_run_id}/cancel")
+def cancel_growth(growth_run_id: str):
+    """Cancel a growth run."""
+    try:
+        result = cancel_growth_run_svc(growth_run_id)
+        if not result:
+            raise HTTPException(status_code=409, detail="run cannot be cancelled in current state")
+        return result
+    except HTTPException as exc:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{growth_run_id}/complete-round")
+def complete_growth_round(growth_run_id: str, payload: dict = Body(default={})): 
+    try:
+        detail = growth_run_state(growth_run_id)
+        candidates = detail.get("candidates") or []
+        if not candidates or any(str(c.get("status") or "").upper() not in {"ADOPTED", "REJECTED"} for c in candidates):
+            raise HTTPException(status_code=409, detail="all growth candidates must be reviewed first")
+        return resume_growth_run(growth_run_id, {**payload, "action": "round_complete", "thread_id": payload.get("thread_id") or detail["run"]["thread_id"]})
+    except HTTPException:
+        raise
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{growth_run_id}/candidates/{candidate_id}/review")
+def review_growth_candidate(growth_run_id: str, candidate_id: int, payload: dict = Body(default={})): 
+    try:
+        detail = growth_run_state(growth_run_id)
+        linked = {int(c.get("id")) for c in (detail.get("candidates") or []) if c.get("id") is not None}
+        if candidate_id not in linked:
+            raise HTTPException(status_code=404, detail="candidate is not linked to growth run")
+        action = str(payload.get("action") or "").lower()
+        status = {"accept": "ADOPTED", "modify": "ADOPTED", "reject": "REJECTED"}.get(action)
+        if not status:
+            raise HTTPException(status_code=400, detail="action must be accept, modify, or reject")
+        note = str(payload.get("review_note") or payload.get("modified_value") or "")
+        result = update_semantic_candidate_status(candidate_id, status=status, reviewed_by=str(payload.get("reviewer_id") or "growth-review"), review_note=note, object_value=(str(payload.get("modified_value")) if action == "modify" and payload.get("modified_value") is not None else None))
+        return {"growth_run_id": growth_run_id, "candidate": result, "action": action}
+    except HTTPException:
+        raise
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

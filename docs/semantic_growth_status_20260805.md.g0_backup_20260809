@@ -1,0 +1,42 @@
+# Semantic Growth Implementation Status
+
+Updated: 2026-08-05
+
+## Current stage
+
+Stage 1 (LangGraph minimum durable human-review loop) is complete.
+
+Implemented:
+
+- Independent `src/semantic_growth` orchestration package and `GrowthState`.
+- Durable runs, opportunities, step records, candidate links, and PostgreSQL checkpoints.
+- `load_scope -> discover_opportunity -> persist_pending_candidate -> human_review` graph.
+- Stage-1 mock candidates in the existing `semantic_claim_candidates` pool.
+- Human interrupt plus `Command(resume=...)` recovery.
+- Create, state, and resume APIs under `/rag/growth-runs`.
+- Idempotent opportunity, candidate, and link writes.
+
+## Acceptance evidence
+
+- Unit and semantic regression tests: 17 passed.
+- Three separate processes created, reloaded, and resumed one persisted graph.
+- Different threads remained isolated and a wrong persisted `thread_id` was rejected.
+- `fastapi_travel` restarted successfully.
+- HTTP create/state/resume returned 200; wrong-thread resume returned 409.
+- Audit runs retained: `growth-stage1-it-20260805-a`, `growth-stage1-http-20260805-a`.
+
+## API and boundary
+
+- `POST /rag/growth-runs`
+- `GET /rag/growth-runs/{growth_run_id}`
+- `POST /rag/growth-runs/{growth_run_id}/resume`
+
+Stage 1 supports accept, modify, and reject. Retry loops and formal publication are later stages.
+
+## Next stage
+
+Stage 2 replaces mock nodes with adapters over the existing text completion chain. Acceptance: select one domain, discover 10 real template gaps, and persist reviewable candidates through the existing pool.
+
+## Existing environment warnings
+
+The shared environment already reports `langgraph-prebuilt`/`langchain-core`, LLaMA Factory/NumPy, requests, and Pydantic compatibility warnings. Stage 1 passed imports, tests, startup, PostgreSQL persistence, and HTTP acceptance. Do not upgrade the shared model environment during Stage 2 without a separate compatibility pass.

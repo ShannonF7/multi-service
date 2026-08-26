@@ -3,16 +3,41 @@ bin-debug/
 bin-release/
 [Oo]bj/
 [Bb]in/
-
-# Other files and folders
 .settings/
-
-# Executables
 *.swf
 *.air
 *.ipa
 *.apk
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# Local secrets and runtime state
+.env
+.env.*
+*.pem
+*.key
+*.secret
+*.log
+logs/
+outputs/
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python and local tooling artifacts
+__pycache__/
+*.py[cod]
+*.orig
+*.bak
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+codex_tmp_*
+*_copy.py
+
+# Local datasets, models, images and generated fixtures
+models/
+mock_scenic_data/
+src/intent/data/
+src/images/
+deploy/neo4j/data/
+deploy/neo4j/logs/

@@ -1,0 +1,45 @@
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+from src.semantic_growth import graph as growth_graph
+
+
+def _patch_side_effects(monkeypatch):
+    opportunities, reviews = {}, []
+    monkeypatch.setattr(growth_graph, "record_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr(growth_graph, "set_run_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(growth_graph, "ensure_mock_opportunity", lambda state: opportunities.setdefault(state["growth_run_id"], {"opportunity_id": f"opp-{state['growth_run_id']}", "node_id": state["seed_node_ids"][0]}))
+    monkeypatch.setattr(growth_graph, "ensure_mock_candidate", lambda state, opportunity: 101)
+    monkeypatch.setattr(growth_graph, "finish_review", lambda *args: reviews.append(args))
+    return reviews
+
+
+def _state(run_id: str, thread_id: str):
+    return {"growth_run_id": run_id, "thread_id": thread_id, "domain_id": "domain-1", "scenic_id": "scenic-1", "seed_node_ids": ["966"], "iteration": 0, "max_iterations": 1, "remaining_budget": 1, "review_status": "not_required"}
+
+
+def test_graph_interrupts_and_resumes_with_same_thread(monkeypatch):
+    reviews = _patch_side_effects(monkeypatch)
+    graph = growth_graph.build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "thread-a"}}
+    paused = graph.invoke(_state("run-a", "thread-a"), config=config)
+    assert paused["review_status"] == "waiting"
+    assert paused["candidate_ids"] == ["101"]
+    assert paused["__interrupt__"][0].value["growth_run_id"] == "run-a"
+    assert graph.get_state(config).next == ("human_review",)
+    completed = graph.invoke(Command(resume={"action": "accept", "reviewer_id": 24}), config=config)
+    assert completed["review_status"] == "accepted"
+    assert graph.get_state(config).next == ()
+    assert len(reviews) == 1
+
+
+def test_thread_state_is_isolated(monkeypatch):
+    _patch_side_effects(monkeypatch)
+    graph = growth_graph.build_graph(InMemorySaver())
+    config_a = {"configurable": {"thread_id": "thread-a"}}
+    config_b = {"configurable": {"thread_id": "thread-b"}}
+    graph.invoke(_state("run-a", "thread-a"), config=config_a)
+    graph.invoke(_state("run-b", "thread-b"), config=config_b)
+    assert graph.get_state(config_a).values["growth_run_id"] == "run-a"
+    assert graph.get_state(config_b).values["growth_run_id"] == "run-b"
+

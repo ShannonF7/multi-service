@@ -1,0 +1,174 @@
+{
+  "script_metadata": {
+    "script_id": "ZBGB_AWD_001",
+    "title": "孤城黎明",
+    "version": "1.1.0",
+    "era_background": "天下动荡，\"玄冥宗\"把持朝政，义军\"破晓\"欲攻破其最后要塞\"孤城\"。此城依山而建，易守难攻，唯有获得城内布防图，方能破城。你们，是潜入城内的义军内应。"
+  },
+  "era_background": "",
+  "mechanism": "集齐四大神兽（青龙、白虎、朱雀、玄武）之力，在城外义军发动总攻前，于子时前找到并送出\"孤城布防图\"。",
+  "tasks": [
+    {
+      "task_id": "T01_PROLOGUE",
+      "stage_name": "序幕：暗夜密令",
+      "location": "南堡门",
+      "npc": "{{NPC_T01_NAME}}",
+      "npc_role": "{{NPC_T01_ROLE}}",
+      "objective_template": "获取入城凭证（门票）与任务指引，前往堡墙脚下通过考验。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": null,
+      "next_task_id": "T02_FIRST_TRIAL",
+      "sub_tasks": []
+    },
+    {
+      "task_id": "T02_FIRST_TRIAL",
+      "stage_name": "第一幕：朱雀考验 · 获取信任",
+      "location": "堡墙脚下",
+      "npc": "周先生",
+      "npc_role": "城内风水师",
+      "objective_template": "完成九连环挑战，证明巧思，获取'通行令牌'。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": "通行令牌, 布防图碎片一",
+      "next_task_id": "T03_TUNNEL_SEEK",
+      "sub_tasks": []
+    },
+    {
+      "task_id": "T03_TUNNEL_SEEK",
+      "stage_name": "第二幕：地道潜行 · 密道寻踪 (线索)",
+      "location": "南堡门到地道路上沿途",
+      "npc": null,
+      "npc_role": null,
+      "objective_template": "沿途留意古堡内建筑与星宿的对应关系，通过建筑旁的星宿提示获取谜语线索，根据四个谜语关联对应的星宿含义，获取专属于你的线索。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": null,
+      "next_task_id": "T04_TUNNEL_CROSS",
+      "sub_tasks": [
+        {
+          "location": "南堡门（对应张宿）",
+          "game": "张宿星象视角",
+          "description": "玩家必须站在南堡门正门（面向东）的特定位置，才能看到张宿星象图与建筑朝向的对应关系。AI提示：'张宿为南方朱雀七宿之首，古语云“张宿东升，天下太平”。你看到的南堡门朝向与张宿升起方向一致，问：张宿升起时，面向何方？' 玎答对后获得关键词'东'。*关键点：只有站在南堡门正门面向东，才能看到星象图与建筑的对应，其他位置看不到。*",
+          "game_form": "与AI对话互动解谜",
+          "game_gained": "关键词：东"
+        },
+        {
+          "location": "星象馆",
+          "game": "鬼宿星图视角",
+          "description": "玩家必须站在星象馆内星图正前方（面向星图）的特定位置，才能看到鬼宿的'夜'意象与实际含义的对比。AI提示：'鬼宿在二十八宿中常与'夜'相关，但古时鬼宿主何事？看这幅星图，鬼宿与'夜'的关联与实际含义形成对比。' 玩家答对后获得关键词'玄'。*关键点：只有站在星图正前方，才能看到鬼宿的'夜'意象与实际含义的对比，其他位置看不到。*",
+          "game_form": "与AI对话互动解谜",
+          "game_gained": "关键词：玄"
+        },
+        {
+          "location": "泥包铁像（对应鬼宿）",
+          "game": "鬼宿铁像视角",
+          "description": "玩家必须站在泥包铁像的北侧（面向铁像）的特定位置，才能听到AI讲述的鬼宿传说。AI提示：'鬼宿之'鬼'，常被古人用来指代神秘之事。你看到的泥包铁像上'鬼'字与鬼宿的'鬼'字形成呼应，问：鬼宿之'鬼'，指何物？' 玩家答对后获得关键词'影'。*关键点：只有站在泥包铁像北侧，才能听到AI讲述的鬼宿传说，其他位置听不到。*",
+          "game_form": "与AI对话互动解谜",
+          "game_gained": "关键词：影"
+        },
+        {
+          "location": "魁星楼（对应奎宿）",
+          "game": "奎宿星象视角",
+          "description": "玩家必须站在魁星楼奎宿星象图前（面向星象图）的特定位置，才能看到奎宿与'魁'字的关联。AI提示：'奎宿为西方白虎第一宿，主兵戈。看这幅奎宿星象图，'奎'字与'魁'字同源，问：奎宿的'奎'字，与何字同义？' 玩家答对后获得关键词'魁'。*关键点：只有站在奎宿星象图前，才能看到奎宿与'魁'字的关联，其他位置看不到。*",
+          "game_form": "与AI对话互动解谜",
+          "game_gained": "关键词：魁"
+        }
+      ]
+    },
+    {
+      "task_id": "T04_TUNNEL_CROSS",
+      "stage_name": "第二幕：地道潜行 · 密道寻踪 (穿越)",
+      "location": "城内密道",
+      "npc": null,
+      "npc_role": null,
+      "objective_template": "悄声穿越密道，并在出口回答守卫提问，（回答地道洞口数）。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": "布防图残片二",
+      "next_task_id": "T05_DYNAMIC_FOOD",
+      "sub_tasks": []
+    },
+    {
+      "task_id": "T05_DYNAMIC_FOOD",
+      "stage_name": "第三幕：醋坊暗号 · 五味辨踪",
+      "location": "城内醋坊",
+      "npc": "醋坊掌柜",
+      "npc_role": "义军内应",
+      "objective_template": "通过品尝辨认暗号，并以**购买特定[SLOT: FOOD_ITEM_T05]**（失败可购买获得提示）的名义，获得下一线索。",
+      "selected_item": "清露酿（张壁苹果醋）",
+      "npc_dialogue": "不错，看来你们确实是行家！听说有人对蛋、花生、山楂、大米之物避讳，这**清露酿（张壁苹果醋）**是内应特地为你们准备的，绝无蛋、花生、山楂、大米，你带着它去茗香阁，他会明白的。",
+      "item_gained": "下一线索（茗香阁）, 布防图碎片三",
+      "next_task_id": "T06_DYNAMIC_TEA",
+      "sub_tasks": []
+    },
+    {
+      "task_id": "T06_DYNAMIC_TEA",
+      "stage_name": "第四幕：茶舍密报 · 真伪甄别",
+      "location": "茗香阁",
+      "npc": "茶舍主人",
+      "npc_role": "义军内应",
+      "objective_template": "完成茶叶与词牌的对应任务，并通过**购买特定[SLOT: MEMORABILIA_T06]**的名义获取布防图碎片四。",
+      "selected_item": "赤焰信笺（红茶）",
+      "npc_dialogue": "完成对应后，你们需以购买这件特殊的**赤焰信笺（红茶）**作为交换，此茶采自寒夜霜峰，经七道秘火焙干，不沾蛋、花生、山楂、大米等杂味，纯净如义军忠魂，我才敢把布防图碎片交给你们。",
+      "item_gained": "布防图碎片四",
+      "next_task_id": "T07_FINAL_CHESS",
+      "sub_tasks": []
+    },
+    {
+      "task_id": "T07_FINAL_CHESS",
+      "stage_name": "第五幕：棋院终局 · 智取残图",
+      "location": "城内棋院",
+      "npc": "棋院主人",
+      "npc_role": "隐士",
+      "objective_template": "协助复盘'守城棋局'，找出关键一着，若抽取坐标重复，可**购买[SLOT: RETRY_GIFT]**获得重新抽取的机会。",
+      "selected_item": "老夫这里倒有些青檀残影牌（张壁手绘木牌）",
+      "npc_dialogue": "若不想重头再来，老夫这里倒有些青檀残影牌（张壁手绘木牌），以物换物，权当弥补这局棋的变数吧。此物取自深山老木，未染五谷杂粮之气，亦无禽卵落尘、果核沾露之忧，持之如握松风，安心便是。",
+      "item_gained": "布防图残片五",
+      "next_task_id": "T08_FINALE",
+      "sub_tasks": [
+        {
+          "location": "三大士宫",
+          "game": "极速传输线",
+          "description": "在不使用手的情况下，通过一套由队员搭建的“传输通道”，以最快的速度将一颗“能量球”从起点运送到终点的杯子中。",
+          "game_form": "抽签",
+          "game_gained": "黑棋的横坐标或纵坐标"
+        },
+        {
+          "location": "空王行祠",
+          "game": "团体巨画创作猜测",
+          "description": "几个成员为一组，只有第一个成员知道绘画内容，剩下的成员猜测前面成员画的东西，并继续创作，最后一个人需要猜出正确答案。",
+          "game_form": "抽签",
+          "game_gained": "黑棋的横坐标或纵坐标"
+        },
+        {
+          "location": "吕祖阁",
+          "game": "一圈到底",
+          "description": "全队成员手拉手，在不用手的情况下，以最快速度让一个呼啦圈穿过每个人的身体。",
+          "game_form": "抽签",
+          "game_gained": "黑棋的横坐标或纵坐标"
+        },
+        {
+          "location": "琉璃展厅",
+          "game": "默契考验",
+          "description": "参与成员不可以沟通，需要按照裁判给出的某种要求进行排队要求。",
+          "game_form": "抽签",
+          "game_gained": "黑棋的横坐标或纵坐标"
+        }
+      ]
+    },
+    {
+      "task_id": "T08_FINALE",
+      "stage_name": "终幕：研学院合成 · 黎明将至",
+      "location": "研学院",
+      "npc": null,
+      "npc_role": "主持人",
+      "objective_template": "将四象之力的照片对应成功，可将五枚布防图残片合成完整图纸，送出城外。",
+      "selected_item": null,
+      "npc_dialogue": null,
+      "item_gained": null,
+      "next_task_id": "END",
+      "sub_tasks": []
+    }
+  ]
+}

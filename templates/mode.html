@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>剧本杀全域创作引擎 3.0 Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111827;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #030712;
+            color: #f9fafb;
+        }
+
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(75, 85, 99, 0.4);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+        import {
+            Box, Layers, BookOpen, Save, Upload, Plus, Settings,
+            Image as ImageIcon, Link as LinkIcon, Cpu, Shuffle,
+            MapPin, MessageSquare, Mic, Edit3, Trash2, Move,
+            CheckCircle, AlertCircle, Search, Grid, LayoutTemplate,
+            MoreHorizontal, X, Database, ShoppingBag, User, Package,
+            FileText, Users, GitBranch, Sparkles, FolderOpen, Play,
+            ArrowRight, MonitorPlay
+        } from 'https://esm.sh/lucide-react@0.292.0';
+
+        function ScriptEditorSystem() {
+            const [activeModule, setActiveModule] = useState('script');
+
+            // --- 模拟数据 ---
+
+            // 1. 道具数据
+            const [items, setItems] = useState([
+                { id: 1, name: '锈迹斑斑的钥匙', type: 'quest', rarity: 'common', skuId: 'SKU-001', img: 'key.png', desc: '开启古井的必要道具', attributes: [{ key: '耐久', value: '1' }] },
+                { id: 2, name: '紫外线手电', type: 'tool', rarity: 'rare', skuId: 'SKU-882', img: 'flashlight.png', desc: '照射隐形字迹', attributes: [{ key: '电量', value: '100' }, { key: '光照范围', value: '5m' }] },
+            ]);
+            const itemTemplates = [
+                { id: 't1', name: '通用解谜道具模板', type: 'quest', rarity: 'common', attributes: [{ key: '线索等级', value: '1' }] },
+                { id: 't2', name: '回血药剂模板', type: 'consumable', rarity: 'common', attributes: [{ key: 'HP恢复', value: '20' }] },
+                { id: 't3', name: '战斗武器模板', type: 'tool', rarity: 'rare', attributes: [{ key: '攻击力', value: '50' }, { key: '耐久', value: '10' }] },
+            ];
+
+            // 2. 关卡/角色数据
+            const [levelRoles, setLevelRoles] = useState([
+                { id: 'r1', name: '守门人', type: 'NPC', ability: '阻挡通行', task: '向玩家索要口令' },
+                { id: 'r2', name: '调查员(玩家)', type: 'Player', ability: '洞察', task: '找到钥匙' }
+            ]);
+            const levelLibrary = [
+                { id: 'lib1', name: '标准密室逃脱', type: '解谜', tags: ['室内', '逻辑'], items: ['密码锁', '日记本'] },
+                { id: 'lib2', name: '古风集市搜证', type: '搜证', tags: ['室外', 'NPC交互'], items: ['账本', '银票'] },
+                { id: 'lib3', name: '迷宫追逐战', type: '动作', tags: ['限时', '迷宫'], items: ['地图碎片', '火把'] },
+            ];
+
+            // 3. 剧本/节点数据
+            const scripts = [
+                { id: 's1', title: '古堡谍影 v2.0', status: 'Draft' },
+                { id: 's2', title: '长安十二时辰 v1.5', status: 'Published' },
+            ];
+            const [nodes, setNodes] = useState([
+                { id: 'n1', type: 'start', x: 50, y: 150, title: '剧本开始', location: '游客中心' },
+                { id: 'n2', type: 'level_ref', x: 300, y: 100, title: '关卡：古风集市', refId: 'lib2', location: 'Zone_A' },
+                { id: 'n3', type: 'story', x: 300, y: 300, title: '剧情：深夜对峙', location: 'Zone_B', npc: '黑衣人' },
+                { id: 'n4', type: 'end', x: 600, y: 200, title: '结局：真相大白', location: '任意' },
+            ]);
+            const connections = [
+                { from: 'n1', to: 'n2' },
+                { from: 'n1', to: 'n3' },
+                { from: 'n2', to: 'n4' },
+                { from: 'n3', to: 'n4' },
+            ];
+
+            // --- 子模块组件 ---
+
+            // 1. 道具设计系统
+            const RenderItemForge = () => {
+                const [selectedItem, setSelectedItem] = useState(items[0]);
+                const [showTemplates, setShowTemplates] = useState(false);
+
+                const updateField = (field, value) => {
+                    const updatedItem = { ...selectedItem, [field]: value };
+                    setSelectedItem(updatedItem);
+                    setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+                };
+
+                const addAttribute = () => {
+                    const newAttrs = [...(selectedItem.attributes || []), { key: '新属性', value: '' }];
+                    updateField('attributes', newAttrs);
+                };
+
+                const loadTemplate = (template) => {
+                    const newItem = {
+                        ...template,
+                        id: Date.now(),
+                        name: template.name + ' (Copy)',
+                        skuId: '',
+                        img: 'template.png',
+                        desc: '基于模板创建...'
+                    };
+                    setItems([...items, newItem]);
+                    setSelectedItem(newItem);
+                    setShowTemplates(false);
+                };
+
+                return (
+                    <div className="flex h-full bg-gray-900 text-gray-100">
+                        {/* 左侧列表 */}
+                        <div className="w-72 border-r border-gray-700 flex flex-col bg-gray-900">
+                            <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/30">
+                                <h3 className="font-bold flex items-center gap-2"><Database size={18} className="text-indigo-400" /> 道具资产库</h3>
+                                <div className="flex gap-1">
+                                    <button onClick={() => setShowTemplates(!showTemplates)} className="p-2 hover:bg-gray-700 rounded text-indigo-400" title="读取模板"><FolderOpen size={18} /></button>
+                                    <button className="p-2 hover:bg-gray-700 rounded text-emerald-400" title="新建"><Plus size={18} /></button>
+                                </div>
+                            </div>
+
+                            {showTemplates && (
+                                <div className="bg-gray-800 border-b border-gray-700 p-2 space-y-1 animate-in slide-in-from-top-2 shadow-inner">
+                                    <div className="text-[10px] text-gray-500 uppercase px-2 font-bold mb-1">选择模板加载</div>
+                                    {itemTemplates.map(t => (
+                                        <button key={t.id} onClick={() => loadTemplate(t)} className="w-full text-left text-xs p-2 hover:bg-indigo-900/50 rounded text-gray-300 flex justify-between group">
+                                            <span>{t.name}</span>
+                                            <span className="opacity-0 group-hover:opacity-100 text-indigo-400"><Plus size={12} /></span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                                {items.map(item => (
+                                    <div key={item.id} onClick={() => setSelectedItem(item)} className={`p-3 rounded-lg cursor-pointer flex items-center gap-3 transition-all border ${selectedItem.id === item.id ? 'bg-indigo-900/40 border-indigo-500' : 'hover:bg-gray-800 border-transparent'}`}>
+                                        <div className="w-10 h-10 bg-gray-800 rounded-md flex items-center justify-center text-xs text-gray-500 overflow-hidden border border-gray-700">
+                                            {item.img && item.img.endsWith('.png') ? <ImageIcon size={16} /> : 'IMG'}
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-bold truncate w-32 text-gray-200">{item.name}</div>
+                                            <div className="flex gap-2 mt-1">
+                                                <span className="text-[10px] text-gray-400 uppercase bg-gray-800 px-1.5 rounded">{item.type}</span>
+                                                <span className={`text-[10px] uppercase px-1.5 rounded ${item.rarity === 'rare' ? 'bg-purple-900/50 text-purple-300' : 'bg-gray-700 text-gray-400'}`}>{item.rarity}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 右侧编辑 */}
+                        <div className="flex-1 p-8 overflow-y-auto bg-gray-950">
+                            <div className="max-w-4xl mx-auto flex gap-8">
+                                <div className="flex-1 space-y-6">
+                                    {/* 基础属性 */}
+                                    <div className="glass-panel p-6 rounded-xl space-y-5">
+                                        <h4 className="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                                            <Settings size={14} /> 基础定义
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-5">
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1.5 font-medium">道具名称</label>
+                                                <input type="text" value={selectedItem.name} onChange={(e) => updateField('name', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1.5 font-medium">SKU ID (商品链接)</label>
+                                                <div className="flex items-center bg-gray-900 border border-gray-700 rounded-lg focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
+                                                    <div className="pl-3 pr-2 text-emerald-600"><LinkIcon size={14} /></div>
+                                                    <input type="text" value={selectedItem.skuId || ''} onChange={(e) => updateField('skuId', e.target.value)} className="w-full bg-transparent p-2.5 text-white outline-none" placeholder="未绑定" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1.5 font-medium">道具描述</label>
+                                            <textarea className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 h-24 text-gray-300 resize-none focus:border-indigo-500 outline-none" value={selectedItem.desc || ''} onChange={(e) => updateField('desc', e.target.value)}></textarea>
+                                        </div>
+                                    </div>
+
+                                    {/* 功能属性动态编辑 */}
+                                    <div className="glass-panel p-6 rounded-xl">
+                                        <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+                                            <h4 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                                                <Cpu size={14} /> 功能属性配置 (Attributes)
+                                            </h4>
+                                            <button onClick={addAttribute} className="text-xs bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50 px-2 py-1 rounded border border-emerald-800 flex items-center gap-1 transition-all">
+                                                <Plus size={12} /> 添加属性
+                                            </button>
+                                        </div>
+                                        <div className="space-y-3">
+                                            {selectedItem.attributes && selectedItem.attributes.map((attr, idx) => (
+                                                <div key={idx} className="flex gap-3 items-center group">
+                                                    <div className="flex-1 flex gap-0 rounded-lg overflow-hidden border border-gray-700 focus-within:border-indigo-500">
+                                                        <input type="text" placeholder="属性名" value={attr.key} onChange={(e) => {
+                                                            const newAttrs = [...selectedItem.attributes];
+                                                            newAttrs[idx].key = e.target.value;
+                                                            updateField('attributes', newAttrs);
+                                                        }} className="w-1/2 bg-gray-800 p-2 text-sm text-gray-300 outline-none border-r border-gray-700" />
+                                                        <input type="text" placeholder="属性值" value={attr.value} onChange={(e) => {
+                                                            const newAttrs = [...selectedItem.attributes];
+                                                            newAttrs[idx].value = e.target.value;
+                                                            updateField('attributes', newAttrs);
+                                                        }} className="w-1/2 bg-gray-900 p-2 text-sm text-indigo-300 font-mono outline-none" />
+                                                    </div>
+                                                    <button onClick={() => {
+                                                        const newAttrs = selectedItem.attributes.filter((_, i) => i !== idx);
+                                                        updateField('attributes', newAttrs);
+                                                    }} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"><Trash2 size={16} /></button>
+                                                </div>
+                                            ))}
+                                            {(!selectedItem.attributes || selectedItem.attributes.length === 0) && (
+                                                <div className="text-center text-xs text-gray-600 py-6 border-2 border-dashed border-gray-800 rounded-lg">暂无特殊属性，请添加</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 预览 */}
+                                <div className="w-72">
+                                    <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700 shadow-xl">
+                                        <div className="text-xs text-gray-500 mb-2 font-bold uppercase text-center">App 内展示预览</div>
+                                        <div className="w-full aspect-[3/4] bg-gradient-to-br from-gray-900 to-black rounded-xl border border-gray-700 relative flex flex-col items-center p-6 overflow-hidden group">
+                                            <div className="absolute top-0 right-0 p-2">
+                                                <span className="bg-yellow-600/20 text-yellow-500 text-[10px] px-2 py-0.5 rounded border border-yellow-600/50">{selectedItem.rarity.toUpperCase()}</span>
+                                            </div>
+                                            <div className="w-32 h-32 bg-gray-800 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(79,70,229,0.2)] border border-gray-700 group-hover:border-indigo-500 transition-colors">
+                                                <ImageIcon size={48} className="text-gray-600 group-hover:text-indigo-400" />
+                                            </div>
+                                            <div className="text-center w-full">
+                                                <div className="font-bold text-lg text-white mb-1">{selectedItem.name}</div>
+                                                <div className="text-[10px] text-gray-400 uppercase tracking-widest mb-4">{selectedItem.type} Item</div>
+                                                <div className="text-xs text-gray-500 leading-relaxed line-clamp-3 mb-4">{selectedItem.desc}</div>
+                                                <button className="w-full py-2 bg-indigo-600 text-white text-xs font-bold rounded shadow-lg shadow-indigo-900/50">查看详情</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // 2. 关卡设计系统
+            const RenderLevelLab = () => {
+                const [labMode, setLabMode] = useState('library'); // 'library', 'editor'
+                const [editorTab, setEditorTab] = useState('roles');
+
+                return (
+                    <div className="flex h-full bg-gray-900 text-gray-100">
+                        {/* 左侧导航 */}
+                        <div className="w-80 border-r border-gray-700 flex flex-col bg-gray-900">
+                            <div className="p-4 border-b border-gray-700">
+                                <h3 className="font-bold mb-3 flex items-center gap-2"><Grid size={18} /> 关卡实验室</h3>
+                                <div className="flex bg-gray-800 p-1 rounded-lg">
+                                    <button onClick={() => setLabMode('library')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${labMode === 'library' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}>关卡库</button>
+                                    <button onClick={() => setLabMode('editor')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${labMode === 'editor' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}>编辑器</button>
+                                </div>
+                            </div>
+
+                            {/* 模式 A: 关卡库 */}
+                            {labMode === 'library' && (
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    <div className="relative">
+                                        <Search size={14} className="absolute left-3 top-2.5 text-gray-500" />
+                                        <input type="text" placeholder="搜索关卡模板..." className="w-full bg-gray-800 border border-gray-700 rounded-full pl-9 pr-3 py-2 text-xs focus:border-indigo-500 outline-none text-gray-300" />
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        {levelLibrary.map(lib => (
+                                            <div key={lib.id} className="bg-gray-800 border border-gray-700 p-3 rounded-lg hover:border-indigo-500 cursor-pointer group transition-all">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h4 className="font-bold text-sm text-gray-200">{lib.name}</h4>
+                                                    <span className="text-[10px] bg-indigo-900/50 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-900">{lib.type}</span>
+                                                </div>
+                                                <div className="flex gap-1 flex-wrap mb-3">
+                                                    {lib.tags.map(t => <span key={t} className="text-[9px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">{t}</span>)}
+                                                </div>
+                                                <div className="bg-gray-900/50 p-2 rounded text-[10px] text-gray-500 flex items-start gap-1.5 mb-3">
+                                                    <Box size={12} className="mt-0.5 shrink-0" />
+                                                    <span>需求资源: {lib.items.join(', ')}</span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button className="flex-1 bg-indigo-600/10 text-indigo-400 border border-indigo-600/30 py-1.5 rounded text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-1.5">
+                                                        <Sparkles size={12} /> AI 优化
+                                                    </button>
+                                                    <button className="flex-1 bg-gray-700 text-gray-300 py-1.5 rounded text-xs hover:bg-gray-600 flex items-center justify-center gap-1">
+                                                        <Upload size={12} /> 加载
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 模式 B: 编辑器 */}
+                            {labMode === 'editor' && (
+                                <div className="flex-1 flex flex-col">
+                                    <div className="flex border-b border-gray-700 px-4 gap-4">
+                                        {['roles', 'sublevels', 'logic'].map(tab => (
+                                            <button
+                                                key={tab}
+                                                onClick={() => setEditorTab(tab)}
+                                                className={`py-3 text-xs font-bold border-b-2 transition-colors ${editorTab === tab ? 'border-indigo-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                                            >
+                                                {tab === 'roles' && '角色人员'}
+                                                {tab === 'sublevels' && '子关卡'}
+                                                {tab === 'logic' && '逻辑图'}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto p-4">
+                                        {/* 角色管理 */}
+                                        {editorTab === 'roles' && (
+                                            <div className="space-y-4 animate-in slide-in-from-left-4">
+                                                <button className="w-full py-2 border border-dashed border-gray-600 rounded-lg text-xs text-gray-400 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center gap-1 transition-colors">
+                                                    <Plus size={14} /> 添加新角色 (NPC/Player)
+                                                </button>
+
+                                                {levelRoles.map(role => (
+                                                    <div key={role.id} className="bg-gray-800 p-3 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors">
+                                                        <div className="flex justify-between items-center mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className={`w-2 h-2 rounded-full ${role.type === 'NPC' ? 'bg-purple-500' : 'bg-green-500'}`}></div>
+                                                                <input type="text" defaultValue={role.name} className="bg-transparent font-bold text-sm text-white w-24 border-b border-transparent focus:border-indigo-500 outline-none" />
+                                                            </div>
+                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${role.type === 'NPC' ? 'bg-purple-900/30 text-purple-400' : 'bg-green-900/30 text-green-400'}`}>{role.type}</span>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] text-gray-500 w-12">特殊能力</span>
+                                                                <input type="text" defaultValue={role.ability} className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 outline-none focus:border-indigo-500" />
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] text-gray-500 w-12">初始任务</span>
+                                                                <input type="text" defaultValue={role.task} className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 outline-none focus:border-indigo-500" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* 子关卡管理 */}
+                                        {editorTab === 'sublevels' && (
+                                            <div className="space-y-4 animate-in slide-in-from-left-4">
+                                                <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-xs text-indigo-300 flex gap-2">
+                                                    <Info size={14} className="shrink-0 mt-0.5" />
+                                                    支持多层级嵌套关卡，适用于大型密室或多区域联动。
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500 px-2">
+                                                        <FolderOpen size={12} /> 根节点: 标准密室逃脱
+                                                    </div>
+                                                    <div className="pl-4 border-l border-gray-700 ml-2 space-y-2">
+                                                        <div className="bg-gray-800 p-2.5 rounded border border-gray-700 flex justify-between items-center group hover:border-indigo-500 cursor-pointer">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                                                <span className="text-sm font-medium">L1-A: 密室前厅</span>
+                                                            </div>
+                                                            <Settings size={12} className="text-gray-500 group-hover:text-white" />
+                                                        </div>
+                                                        <div className="bg-gray-800 p-2.5 rounded border border-gray-700 flex justify-between items-center group hover:border-indigo-500 cursor-pointer">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                                                                <span className="text-sm font-medium">L1-B: 地下暗道</span>
+                                                            </div>
+                                                            <Settings size={12} className="text-gray-500 group-hover:text-white" />
+                                                        </div>
+                                                        <button className="w-full py-1.5 border border-dashed border-gray-700 rounded text-xs text-gray-500 hover:text-indigo-400 hover:border-indigo-500/50 flex items-center justify-center gap-1">
+                                                            <Plus size={10} /> 添加子区域
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {editorTab === 'logic' && (
+                                            <div className="flex flex-col items-center justify-center h-64 text-gray-600 space-y-2 border-2 border-dashed border-gray-800 rounded-xl">
+                                                <GitBranch size={32} className="opacity-50" />
+                                                <div className="text-xs">拖拽逻辑节点至右侧画布</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 右侧：可视化画布 */}
+                        <div className="flex-1 bg-gray-950 relative flex items-center justify-center overflow-hidden">
+                            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#4f46e5 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+
+                            <div className="absolute top-4 left-4 bg-black/50 backdrop-blur px-3 py-1.5 rounded-full text-xs text-gray-400 border border-gray-800">
+                                画布预览: {labMode === 'library' ? 'Library Preview' : 'Live Editor'}
+                            </div>
+
+                            <div className="bg-gray-900/90 border border-gray-700 p-8 rounded-2xl backdrop-blur-md max-w-xl w-full shadow-2xl relative">
+                                <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-white">
+                                    <LayoutTemplate size={24} className="text-indigo-500" />
+                                    关卡流程: 标准密室逃脱
+                                </h2>
+                                <div className="space-y-0 relative">
+                                    {/* 连接线 */}
+                                    <div className="absolute left-5 top-5 bottom-5 w-0.5 bg-gray-700"></div>
+
+                                    {/* 步骤 1 */}
+                                    <div className="flex items-start gap-4 relative z-10 mb-6 group">
+                                        <div className="w-10 h-10 rounded-full bg-green-900/80 border-2 border-green-500 flex items-center justify-center text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.3)] group-hover:scale-110 transition-transform">
+                                            <User size={18} />
+                                        </div>
+                                        <div className="flex-1 bg-gray-800/80 p-4 rounded-xl border border-gray-700 group-hover:border-green-500/50 transition-colors">
+                                            <div className="font-bold text-gray-200 mb-1 text-sm">角色入场 & 分配</div>
+                                            <div className="text-xs text-gray-500 flex gap-2">
+                                                <span className="bg-black/30 px-1.5 py-0.5 rounded">守门人 (NPC)</span>
+                                                <span className="bg-black/30 px-1.5 py-0.5 rounded">调查员 (Player)</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 步骤 2 */}
+                                    <div className="flex items-start gap-4 relative z-10 mb-6 group">
+                                        <div className="w-10 h-10 rounded-full bg-purple-900/80 border-2 border-purple-500 flex items-center justify-center text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)] group-hover:scale-110 transition-transform">
+                                            <Box size={18} />
+                                        </div>
+                                        <div className="flex-1 bg-gray-800/80 p-4 rounded-xl border border-gray-700 group-hover:border-purple-500/50 transition-colors">
+                                            <div className="font-bold text-gray-200 mb-1 text-sm">关键道具交互</div>
+                                            <div className="text-xs text-gray-500">条件: 持有 <span className="text-purple-400">锈迹斑斑的钥匙</span></div>
+                                        </div>
+                                    </div>
+
+                                    {/* 步骤 3 */}
+                                    <div className="flex items-start gap-4 relative z-10 group">
+                                        <div className="w-10 h-10 rounded-full bg-orange-900/80 border-2 border-orange-500 flex items-center justify-center text-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.3)] group-hover:scale-110 transition-transform">
+                                            <Flag size={18} />
+                                        </div>
+                                        <div className="flex-1 bg-gray-800/80 p-4 rounded-xl border border-gray-700 group-hover:border-orange-500/50 transition-colors">
+                                            <div className="font-bold text-gray-200 mb-1 text-sm">子区域解锁</div>
+                                            <div className="text-xs text-gray-500">触发: 开放 <span className="text-orange-400">L1-B 地下暗道</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // 3. 剧本设计系统
+            const RenderScriptWeaver = () => {
+                return (
+                    <div className="flex h-full bg-gray-900 text-gray-100 overflow-hidden">
+                        {/* 顶部工具栏 */}
+                        <div className="absolute top-0 left-64 right-80 h-16 bg-gray-800/80 backdrop-blur border-b border-gray-700 flex items-center px-6 justify-between z-10 shadow-lg">
+                            <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-2 group cursor-pointer">
+                                    <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg"><BookOpen size={16} className="text-white" /></div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">当前剧本</span>
+                                        <select className="bg-transparent border-none outline-none text-sm font-bold text-white cursor-pointer hover:text-indigo-400 transition-colors appearance-none">
+                                            {scripts.map(s => <option key={s.id}>{s.title}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="h-8 w-px bg-gray-700"></div>
+                                <div className="flex gap-2">
+                                    <button className="flex items-center gap-1.5 text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-gray-200 transition-colors"><Save size={14} /> 保存</button>
+                                    <button className="flex items-center gap-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-white transition-colors"><Play size={14} /> 试运行</button>
+                                </div>
+                            </div>
+                            <button className="flex items-center gap-2 text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 px-4 py-2 rounded-lg text-white font-bold shadow-lg shadow-indigo-900/50 transition-all transform hover:scale-105">
+                                <Plus size={16} /> 新增节点
+                            </button>
+                        </div>
+
+                        {/* 左侧：剧本班底 (Script Cast) */}
+                        <div className="w-64 bg-gray-900 border-r border-gray-700 pt-20 p-4 flex flex-col gap-6 z-20">
+                            <div>
+                                <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Users size={14} /> 剧本班底 (Cast)</h3>
+                                <div className="space-y-3">
+                                    <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 relative group hover:border-indigo-500 transition-all cursor-pointer">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-full bg-indigo-900 flex items-center justify-center text-[10px] text-indigo-300 font-bold border border-indigo-700">王</div>
+                                                <span className="font-bold text-sm text-gray-200">王掌柜</span>
+                                            </div>
+                                            <span className="text-[9px] bg-gray-700 px-1.5 rounded text-gray-400">NPC</span>
+                                        </div>
+                                        <div className="space-y-1.5 border-t border-gray-700/50 pt-2 mt-2">
+                                            <div className="text-[10px] text-gray-400 flex justify-between">
+                                                <span>性格 (Big5)</span>
+                                                <span className="text-gray-300">贪财, 胆小</span>
+                                            </div>
+                                            <div className="text-[10px] text-gray-400 flex justify-between">
+                                                <span>语言风格</span>
+                                                <span className="text-gray-300">市井, 方言</span>
+                                            </div>
+                                        </div>
+                                        <button className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><Edit3 size={12} /></button>
+                                    </div>
+
+                                    <button className="w-full py-2.5 border border-dashed border-gray-700 text-xs text-gray-500 rounded-lg hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center gap-1.5 transition-colors">
+                                        <Plus size={14} /> 添加角色 / 玩家位
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-gray-800 flex-1">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Grid size={14} /> 关卡资源库</h3>
+                                <div className="space-y-2 overflow-y-auto max-h-[300px] pr-1">
+                                    {levelLibrary.map(lib => (
+                                        <div key={lib.id} className="p-2.5 bg-gray-800/50 border border-gray-700 rounded-lg text-xs cursor-grab hover:bg-gray-800 hover:border-gray-500 flex justify-between items-center transition-colors group">
+                                            <div>
+                                                <div className="font-bold text-gray-300">{lib.name}</div>
+                                                <div className="text-[9px] text-gray-500 mt-0.5">{lib.type}</div>
+                                            </div>
+                                            <LinkIcon size={12} className="text-gray-600 group-hover:text-indigo-400" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="text-[9px] text-gray-600 mt-3 text-center bg-gray-900/50 p-2 rounded border border-gray-800">
+                                    💡 拖拽至画布创建"引用关卡节点"
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* 中间：节点画布 */}
+                        <div className="flex-1 bg-gray-950 relative overflow-hidden pt-16 cursor-grab active:cursor-grabbing">
+                            <div className="absolute inset-0 w-[2000px] h-[2000px]" style={{ backgroundImage: 'radial-gradient(#374151 1px, transparent 1px)', backgroundSize: '40px 40px' }}>
+                                {/* SVG 连线 */}
+                                <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                                    {connections.map((conn, i) => {
+                                        const start = nodes.find(n => n.id === conn.from);
+                                        const end = nodes.find(n => n.id === conn.to);
+                                        return <path key={i} d={`M ${start.x + 100} ${start.y + 40} C ${start.x + 150} ${start.y + 40}, ${end.x - 50} ${end.y + 40}, ${end.x} ${end.y + 40}`} fill="none" stroke="#4b5563" strokeWidth="2" markerEnd="url(#arrow)" />;
+                                    })}
+                                    <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#4b5563" /></marker></defs>
+                                </svg>
+
+                                {/* 节点渲染 */}
+                                {nodes.map(node => (
+                                    <div key={node.id} className={`absolute w-60 bg-gray-800 rounded-xl shadow-2xl border-2 hover:border-white transition-all cursor-pointer group hover:shadow-[0_0_30px_rgba(0,0,0,0.5)] ${node.type === 'start' ? 'border-emerald-600' : ''} ${node.type === 'end' ? 'border-rose-600' : ''} ${node.type === 'level_ref' ? 'border-indigo-500' : 'border-blue-500'}`} style={{ left: node.x, top: node.y }}>
+                                        <div className={`h-1.5 w-full rounded-t-lg ${node.type === 'start' ? 'bg-emerald-600' : node.type === 'end' ? 'bg-rose-600' : node.type === 'level_ref' ? 'bg-indigo-500' : 'bg-blue-500'}`}></div>
+                                        <div className="p-3">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <span className="font-bold text-sm truncate text-gray-100">{node.title}</span>
+                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Settings size={14} className="text-gray-400 hover:text-white" />
+                                                </div>
+                                            </div>
+
+                                            {/* 关卡引用特殊展示 */}
+                                            {node.type === 'level_ref' && (
+                                                <div className="mb-2 bg-indigo-950/50 border border-indigo-500/30 px-2 py-1.5 rounded text-[10px] text-indigo-300 flex items-center gap-1.5">
+                                                    <LinkIcon size={10} />
+                                                    <span className="truncate">引用: {levelLibrary.find(l => l.id === node.refId)?.name || 'Unknown'}</span>
+                                                </div>
+                                            )}
+
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 bg-gray-900/50 px-2 py-1 rounded border border-gray-700/50">
+                                                    <MapPin size={10} /> {node.location}
+                                                </div>
+                                                {node.npc && (
+                                                    <div className="flex items-center gap-1.5 text-[10px] text-blue-300 bg-blue-900/20 px-2 py-1 rounded border border-blue-900/30">
+                                                        <User size={10} /> NPC: {node.npc}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {/* 连接点 */}
+                                        <div className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 bg-gray-400 rounded-full border border-gray-800 hover:bg-white hover:scale-125 transition-transform"></div>
+                                        <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 bg-gray-400 rounded-full border border-gray-800 hover:bg-white hover:scale-125 transition-transform"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 右侧：增强属性面板 (Inspector) */}
+                        <div className="w-96 bg-gray-900 border-l border-gray-700 pt-16 flex flex-col h-full z-20 shadow-2xl">
+                            <div className="p-5 border-b border-gray-700 bg-gray-800/50 backdrop-blur">
+                                <h3 className="font-bold text-white flex items-center gap-2 text-lg">
+                                    <Edit3 size={18} className="text-blue-400" /> 节点配置
+                                </h3>
+                                <div className="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                                    <span className="bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800">Story Node</span>
+                                    <span>ID: N-3002</span>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-5 space-y-8">
+                                {/* 1. 对白编辑器 (Chat Style) */}
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1.5">
+                                            <MessageSquare size={12} /> 剧本台词 (Dialogue)
+                                        </label>
+                                        <button className="text-[10px] bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded border border-gray-600 flex items-center gap-1 transition-colors">
+                                            <MonitorPlay size={10} /> 预览模式
+                                        </button>
+                                    </div>
+                                    <div className="bg-black/40 border border-gray-700 rounded-xl p-3 space-y-3 max-h-80 overflow-y-auto">
+                                        <div className="flex gap-3 items-start group">
+                                            <div className="w-8 h-8 rounded-full bg-blue-900/80 border border-blue-700 flex items-center justify-center text-xs shrink-0 text-blue-200 font-bold mt-1">王</div>
+                                            <div className="flex-1">
+                                                <div className="text-[10px] text-gray-500 mb-1 flex justify-between">
+                                                    <span>王掌柜 (Nervous)</span>
+                                                    <span className="opacity-0 group-hover:opacity-100 cursor-pointer text-gray-600 hover:text-red-400"><X size={10} /></span>
+                                                </div>
+                                                <div className="bg-gray-800 p-2.5 rounded-lg rounded-tl-none text-xs text-gray-300 border border-gray-700 leading-relaxed">
+                                                    你们...到底是谁派来的？这大半夜的...
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-3 items-start flex-row-reverse group">
+                                            <div className="w-8 h-8 rounded-full bg-green-900/80 border border-green-700 flex items-center justify-center text-xs shrink-0 text-green-200 font-bold mt-1">我</div>
+                                            <div className="flex-1 text-right">
+                                                <div className="text-[10px] text-gray-500 mb-1">玩家 (Leader)</div>
+                                                <div className="bg-emerald-900/30 p-2.5 rounded-lg rounded-tr-none text-xs text-emerald-100 border border-emerald-800/50 leading-relaxed text-left">
+                                                    这就不用你操心了。交出账本！否则...
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button className="w-full py-2 text-xs text-gray-500 border border-dashed border-gray-700 rounded-lg hover:border-gray-500 hover:text-gray-300 hover:bg-gray-800/50 transition-all flex items-center justify-center gap-1">
+                                            <Plus size={12} /> 添加新对白
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 2. AI 演绎设置 */}
+                                <div className="space-y-3">
+                                    <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1.5">
+                                        <Cpu size={12} /> NPC AI 演绎配置 (Prompt)
+                                    </label>
+                                    <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-4">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="text-[10px] text-gray-500 block mb-1">当前情感状态</span>
+                                                <select className="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-xs text-gray-200 outline-none focus:border-indigo-500">
+                                                    <option>紧张 (Nervous)</option>
+                                                    <option>愤怒 (Angry)</option>
+                                                    <option>恐惧 (Fear)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] text-gray-500 block mb-1">开放度 (Temperature)</span>
+                                                <input type="range" className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer mt-2" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] text-gray-500 block mb-1.5 flex justify-between">
+                                                <span>System Prompt 语言风格</span>
+                                                <span className="text-indigo-400 cursor-pointer hover:underline">AI 优化</span>
+                                            </span>
+                                            <textarea className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 h-20 leading-relaxed resize-none outline-none focus:border-indigo-500" defaultValue="使用断断续续的句子，每句话结尾带语气词（如'啊'、'这'），表现出极度的心虚。避免直接回答关于'古井'的问题。"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 3. 关联关卡信息 */}
+                                <div className="bg-indigo-900/10 border border-indigo-500/20 p-4 rounded-xl">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-xs font-bold text-indigo-400">前置条件检查</span>
+                                        <CheckCircle size={12} className="text-emerald-500" />
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 space-y-1">
+                                        <div>• 玩家必须持有 [锈迹斑斑的钥匙]</div>
+                                        <div>• 时间必须在 18:00 之后</div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // 用来防止图标组件报错的占位符（Flag 实际上 lucide 没有 Flag，用 FlagIcon 或者类似的）
+            // 这里我们用 AlertCircle 代替 Flag
+            const Flag = AlertCircle;
+
+            return (
+                <div className="flex h-screen w-screen bg-gray-950 font-sans selection:bg-indigo-500 selection:text-white overflow-hidden">
+                    {/* 主导航 */}
+                    <div className="w-20 bg-black border-r border-gray-800 flex flex-col items-center py-6 gap-8 z-50">
+                        <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-900/50">
+                            S
+                        </div>
+                        <div className="flex flex-col gap-6 w-full px-3">
+                            <button onClick={() => setActiveModule('script')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all group ${activeModule === 'script' ? 'bg-gray-800 text-indigo-400 shadow-inner' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-900'}`}>
+                                <LayoutTemplate size={24} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
+                                <span className="text-[10px] font-medium">剧本</span>
+                            </button>
+                            <button onClick={() => setActiveModule('levels')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all group ${activeModule === 'levels' ? 'bg-gray-800 text-indigo-400 shadow-inner' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-900'}`}>
+                                <Grid size={24} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
+                                <span className="text-[10px] font-medium">关卡</span>
+                            </button>
+                            <button onClick={() => setActiveModule('items')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all group ${activeModule === 'items' ? 'bg-gray-800 text-indigo-400 shadow-inner' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-900'}`}>
+                                <Package size={24} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
+                                <span className="text-[10px] font-medium">道具</span>
+                            </button>
+                        </div>
+                        <div className="mt-auto flex flex-col gap-6 items-center">
+                            <button className="text-gray-500 hover:text-white transition-colors"><Settings size={24} /></button>
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-gray-700 to-gray-600 border-2 border-gray-500 hover:border-gray-300 cursor-pointer"></div>
+                        </div>
+                    </div>
+
+                    {/* 主内容 */}
+                    <div className="flex-1 relative">
+                        {activeModule === 'items' && <RenderItemForge />}
+                        {activeModule === 'levels' && <RenderLevelLab />}
+                        {activeModule === 'script' && <RenderScriptWeaver />}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<ScriptEditorSystem />);
+    </script>
+</body>
+
+</html>

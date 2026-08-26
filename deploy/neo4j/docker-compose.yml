@@ -1,0 +1,29 @@
+name: travel-rag-graph
+
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: travel-rag-neo4j
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:17474:7474"
+      - "127.0.0.1:17687:7687"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./plugins:/plugins
+      - ./import:/var/lib/neo4j/import
+    environment:
+      NEO4J_AUTH: "neo4j/${TRAVEL_NEO4J_PASSWORD}"
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "gds.*,apoc.*"
+      NEO4J_server_memory_heap_initial__size: 1G
+      NEO4J_server_memory_heap_max__size: 4G
+      NEO4J_server_memory_pagecache_size: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s

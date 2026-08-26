@@ -1,0 +1,20 @@
+''' 查询链路:
+        router_node
+        ↓
+        extractor_node
+        ↓
+        planner_node
+        ↓
+        retriever_node
+        ↓
+        fusion_node
+        ↓
+        record_hits_node
+        ↓
+        gate_node
+        ↓
+        generator_node
+        ↓
+        output_node
+    主要管流程怎么走
+'''

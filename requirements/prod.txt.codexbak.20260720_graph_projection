@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pydantic
+python-dotenv
+dashscope
+FlagEmbedding
+numpy
+psutil
+jinja2
+requests
+pymysql
