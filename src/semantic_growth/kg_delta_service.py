@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from src.rag.dependencies import ai_session_scope
 from src.rag.service.value_normalization_service import canonical_predicate, normalize_text_value
+from src.rag.service.claim_evidence_fusion_service import fuse_evidence
 
 
 # G2 policy: different values are only conflicts when the schema says the
@@ -114,40 +115,65 @@ def _resolution_score(resolution: dict[str, Any] | None) -> float:
     return _clamp(base)
 
 
-def _trust_components(item: dict[str, Any], operation: str, *, image_only: bool = False) -> dict[str, float]:
-    supports = item.get("supporting_claims") or []
-    extraction = _clamp(item.get("confidence"))
-    support_scores = []
-    source_quality = []
-    for support in supports:
-        unit = support.get("evidence_unit") or {}
-        support_scores.append(_clamp(float(support.get("confidence") or 0.0) * float(unit.get("source_authority") or 0.5)))
-        source_quality.append(_clamp(unit.get("source_authority") or 0.5))
-    evidence_support = sum(support_scores) / len(support_scores) if support_scores else 0.0
-    source_score = sum(source_quality) / len(source_quality) if source_quality else 0.5
+def _trust_components(item: dict[str, Any], operation: str, *, image_only: bool = False) -> dict[str, Any]:
     subject_score = _resolution_score(item.get("subject_resolution"))
     target_score = _resolution_score(item.get("target_resolution")) if item.get("target_resolution") else subject_score
     entity_resolution = min(subject_score, target_score)
-    independent_count = int(item.get("independent_source_count") or 0)
-    cross_source = _clamp(independent_count / 3.0)
-    statuses = {
-        str((item.get("subject_resolution") or {}).get("status") or "").upper(),
-        str((item.get("target_resolution") or {}).get("status") or "").upper(),
-    }
-    conflict_risk = 1.0 if operation == "CONFLICT" else (0.75 if "AMBIGUOUS" in statuses else (0.55 if operation in {"UPDATE", "DEPRECATE"} else 0.0))
+    bindings: list[dict[str, Any]] = []
+    for support in item.get("supporting_claims") or []:
+        unit = support.get("evidence_unit") or {}
+        quote = str(support.get("quote") or "")
+        content = str(unit.get("content") or "")
+        retrieval_raw = max(
+            float(unit.get("retrieval_score") or 0.0),
+            float(unit.get("rerank_score") or 0.0),
+            float(unit.get("score") or 0.0),
+        )
+        bindings.append(
+            {
+                "source_independence_key": support.get("source_independence_key"),
+                "source_type": unit.get("source_type"),
+                "source_quality": unit.get("source_authority") or 0.5,
+                "retrieval_relevance": min(1.0, retrieval_raw / 5.0),
+                "quote_coverage": 1.0 if quote and quote in content else 0.45 if quote else 0.0,
+                "evidence_locality": 1.0 if unit.get("source_url") or unit.get("source_doc_id") else 0.65,
+                "entailment_score": support.get("entailment_score"),
+                "extraction_confidence": support.get("confidence"),
+                "entity_resolution_confidence": entity_resolution,
+            }
+        )
+    fusion = fuse_evidence(bindings)
+    conflict_risk = 1.0 if operation == "CONFLICT" else (
+        0.75 if any(
+            str((item.get(key) or {}).get("status") or "").upper() == "AMBIGUOUS"
+            for key in ("subject_resolution", "target_resolution")
+        ) else 0.55 if operation in {"UPDATE", "DEPRECATE"} else 0.0
+    )
     if image_only:
         conflict_risk = max(conflict_risk, 0.35)
-    trust = _clamp(0.25 * extraction + 0.20 * evidence_support + 0.15 * entity_resolution + 0.15 * source_score + 0.15 * cross_source - 0.10 * conflict_risk)
+    trust = _clamp(
+        0.55 * float(fusion["evidence_support_score"])
+        + 0.20 * entity_resolution
+        + 0.15 * float(fusion["source_quality"])
+        + 0.10 * float(fusion["cross_source_support"])
+        - 0.10 * conflict_risk
+    )
     return {
-        "extraction_confidence": round(extraction, 4),
-        "evidence_support_score": round(evidence_support, 4),
+        "evidence_count": int(fusion["evidence_count"]),
+        "independent_source_count": int(fusion["independent_source_count"]),
+        "source_group_count": int(fusion["source_group_count"]),
+        "extraction_confidence": round(max(
+            (float(item.get("confidence") or 0.0) for item in item.get("supporting_claims") or []),
+            default=0.0,
+        ), 4),
+        "evidence_support_score": round(float(fusion["evidence_support_score"]), 4),
         "entity_resolution_confidence": round(entity_resolution, 4),
-        "source_quality_score": round(source_score, 4),
-        "cross_source_support": round(cross_source, 4),
+        "source_quality_score": round(float(fusion["source_quality"]), 4),
+        "cross_source_support": round(float(fusion["cross_source_support"]), 4),
         "conflict_risk": round(_clamp(conflict_risk), 4),
         "semantic_trust_score": round(trust, 4),
+        "trust_version": fusion["trust_version"],
     }
-
 
 def _hash(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)

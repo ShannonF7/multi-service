@@ -35,7 +35,9 @@ from src.rag.service.semantic_candidate_store import persist_semantic_candidates
 from src.rag.service.domain_kb_service import search_domain_kb
 from src.rag.service.evidence_store import persist_semantic_evidence_items, persist_semantic_completion_questions
 from src.rag.service.planner_service import CompletionQuestion, plan_completion_questions
-from src.rag.service.value_normalization_service import normalize_candidate_claims, canonical_predicate
+from src.rag.service.value_normalization_service import normalize_candidate_claims, canonical_predicate, normalize_text_value
+from src.rag.service.claim_contract import CanonicalClaim
+from src.rag.service.claim_identity_service import claim_keys
 from src.rag.service.candidate_grouping_service import annotate_candidate_groups, assign_candidate_group_keys
 from src.rag.service.conflict_classification_service import classify_conflicts
 from src.rag.service.entity_resolution_service import resolve_candidate_entities
@@ -1204,6 +1206,30 @@ def claims_from_tool_calls(
         if source_id in source_evidence_map:
             evidence_ids = [int(source_evidence_map[source_id])]
         question_value = question_id or (chunk.question_id if chunk else "")
+        canonical_type = "RELATION" if claim_type == "relation" else "BACKGROUND" if claim_type == "fact" else "PROPERTY"
+        canonical_value = (
+            normalize_text_value(claim_value).casefold()
+            if canonical_type != "RELATION"
+            else None
+        )
+        canonical_object = (
+            f"mention:{normalize_text_value(claim_value).casefold()}"
+            if canonical_type == "RELATION"
+            else None
+        )
+        canonical_claim = CanonicalClaim(
+            domain_id=str(payload.scenic_id),
+            subject_ref=f"node:{payload.node.source_node_id}",
+            claim_type=canonical_type,
+            canonical_predicate=canonical_predicate(
+                predicate_value,
+                temporal_role=temporal_role or None,
+            ),
+            normalized_value=canonical_value,
+            object_ref=canonical_object,
+            temporal_role=temporal_role or None,
+        )
+        identity = claim_keys(canonical_claim)
         selected_props = {str(x or "").strip() for x in (payload.target_fields or []) if str(x or "").strip()}
         selected_rels = {str(x or "").strip() for x in (payload.relation_intents or []) if str(x or "").strip()}
         if claim_type == "property":
@@ -1231,7 +1257,12 @@ def claims_from_tool_calls(
                 support_status="needs_more_evidence",
                 recommend_score=round(max(0.0, min(confidence, 1.0)) * 0.35, 3),
                 confidence=max(0.0, min(confidence, 1.0)),
-                metadata={"discovery_scope": discovery_scope, "completion_mode": completion_mode(payload)},
+                metadata={
+                    "discovery_scope": discovery_scope,
+                    "completion_mode": completion_mode(payload),
+                    "canonical_claim_key": identity["canonical_claim_key"],
+                    "conflict_scope_key": identity["conflict_scope_key"],
+                },
             )
         )
     return claims

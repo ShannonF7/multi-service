@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Any
 
 from src.rag.schemas import CandidateClaim, SemanticCompleteRequest
+from src.rag.service.source_independence_service import source_independence_key
 
 
 HIGH_CONFLICT_CLASSES = {"conflicting", "scope_mismatch", "entity_ambiguity"}
@@ -14,8 +15,15 @@ CORE_FACT_HINTS = ("时间", "年代", "时期", "位置", "地址", "坐标", "
 
 
 def _source_key(claim: CandidateClaim) -> str:
-    evidence = ",".join(str(item) for item in (claim.evidence_ids or []))
-    return str(claim.source_url or evidence or claim.source_id or "").strip()
+    metadata = claim.metadata if isinstance(claim.metadata, dict) else {}
+    return source_independence_key({
+        "source_type": metadata.get("source_type") or metadata.get("provenance_type"),
+        "source_doc_id": metadata.get("source_doc_id") or metadata.get("doc_id"),
+        "source_url": claim.source_url or metadata.get("source_url"),
+        "source_id": claim.source_id,
+        "chunk_id": metadata.get("chunk_id"),
+        "evidence_unit_uid": claim.source_id,
+    })
 
 
 def _schema_values(payload: SemanticCompleteRequest, kind: str) -> set[str]:
@@ -64,9 +72,20 @@ def apply_recommendation_and_risk(
     for group_key, group_claims in claims_by_group.items():
         record = records.get(group_key, {})
         conflict_class = str(record.get("conflict_class") or group_claims[0].conflict_class or "unsupported")
-        source_count = len({_source_key(claim) for claim in group_claims if _source_key(claim)})
-        multi_source_support = min(1.0, source_count / 3.0)
         for claim in group_claims:
+            claim_value = str(
+                claim.object_value or claim.object_name or claim.normalized_value or ""
+            ).strip().casefold()
+            value_sources = {
+                _source_key(item)
+                for item in group_claims
+                if str(
+                    item.object_value or item.object_name or item.normalized_value or ""
+                ).strip().casefold() == claim_value
+                and _source_key(item)
+            }
+            source_count = len(value_sources)
+            multi_source_support = min(1.0, source_count / 3.0)
             meta = dict(claim.metadata or {})
             source_authority = float(meta.get("source_authority_score") or 0.0)
             retrieval_relevance = float(meta.get("retrieval_relevance") or 0.0)

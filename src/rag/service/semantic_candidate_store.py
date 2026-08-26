@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.rag.dependencies import ai_session_scope
 from src.rag.schemas import CandidateClaim, ClaimConflict, SemanticCompleteRequest, EvidenceChunk
 from src.rag.service.value_normalization_service import canonical_predicate
+from src.rag.service.source_independence_service import source_independence_key
 from src.rag.service.conflict_classification_service import (
     classify_candidate_group,
     is_exclusive_relation,
@@ -28,6 +29,7 @@ MIGRATION_FILES = [
     RAG_DIR / "migrations" / "20260711_semantic_completion_jobs.sql",
     RAG_DIR / "migrations" / "20260711_candidate_grouping.sql",
     RAG_DIR / "migrations" / "20260717_entity_resolution_risk.sql",
+    RAG_DIR / "migrations" / "20260826_unified_claim_identity.sql",
 ]
 _SCHEMA_READY = False
 _SCHEMA_LOCK = threading.Lock()
@@ -244,8 +246,15 @@ def _candidate_uid(payload: SemanticCompleteRequest, trace_id: str, claim: Candi
 
 
 def _claim_source_key(claim: CandidateClaim) -> str:
-    evidence = ",".join(str(x) for x in (claim.evidence_ids or []))
-    return str(claim.source_url or evidence or claim.source_id or "").strip()
+    metadata = claim.metadata if isinstance(claim.metadata, dict) else {}
+    return source_independence_key({
+        "source_type": metadata.get("source_type") or metadata.get("provenance_type"),
+        "source_doc_id": metadata.get("source_doc_id") or metadata.get("doc_id"),
+        "source_url": claim.source_url or metadata.get("source_url"),
+        "source_id": claim.source_id,
+        "chunk_id": metadata.get("chunk_id"),
+        "evidence_unit_uid": claim.source_id,
+    })
 
 
 def _claim_allows_multi_value(payload: SemanticCompleteRequest, claim: CandidateClaim) -> bool:
@@ -446,7 +455,9 @@ def persist_semantic_candidates(
                         source_authority_score, source_weight, provenance_type, retrieval_method, authority_class,
                         target_node_id, target_node_candidate_id, entity_resolution_status, possible_nodes,
                         raw_type, suggested_type, type_confidence, risk_level, publication_policy, score_components,
-                        conflict_key, conflict_group, raw_payload, metadata, updated_at
+                        conflict_key, conflict_group, raw_payload, metadata,
+                        canonical_claim_key, conflict_scope_key, trust_version,
+                        trust_components, final_trust_score, updated_at
                     ) values (
                         :candidate_uid, :trace_id, :run_id, :scenic_id, :source_scenic_id,
                         :source_node_id, :subject_name, :subject_type, :graph_scope, :retrieval_source,
@@ -458,7 +469,9 @@ def persist_semantic_candidates(
                         :source_authority_score, :source_weight, :provenance_type, :retrieval_method, :authority_class,
                         :target_node_id, :target_node_candidate_id, :entity_resolution_status, cast(:possible_nodes as jsonb),
                         :raw_type, :suggested_type, :type_confidence, :risk_level, :publication_policy, cast(:score_components as jsonb),
-                        :conflict_key, :conflict_group, cast(:raw_payload as jsonb), cast(:metadata as jsonb), now()
+                        :conflict_key, :conflict_group, cast(:raw_payload as jsonb), cast(:metadata as jsonb),
+                        :canonical_claim_key, :conflict_scope_key, :trust_version,
+                        cast(:trust_components as jsonb), :final_trust_score, now()
                     )
                     on conflict (candidate_uid) do update set
                         status = excluded.status,
@@ -491,6 +504,11 @@ def persist_semantic_candidates(
                         conflict_group = excluded.conflict_group,
                         raw_payload = excluded.raw_payload,
                         metadata = excluded.metadata,
+                        canonical_claim_key = excluded.canonical_claim_key,
+                        conflict_scope_key = excluded.conflict_scope_key,
+                        trust_version = excluded.trust_version,
+                        trust_components = excluded.trust_components,
+                        final_trust_score = excluded.final_trust_score,
                         updated_at = now()
                     returning id
                     """
@@ -549,6 +567,11 @@ def persist_semantic_candidates(
                     "conflict_group": conflict_group,
                     "raw_payload": _json(raw),
                     "metadata": _json(metadata),
+                    "canonical_claim_key": (claim.metadata or {}).get("canonical_claim_key"),
+                    "conflict_scope_key": (claim.metadata or {}).get("conflict_scope_key"),
+                    "trust_version": "completion-v1",
+                    "trust_components": _json(source_meta.get("score_components") or {}),
+                    "final_trust_score": float(claim.recommend_score or 0.0),
                 },
             ).mappings().first()
             candidate_id = int(row["id"]) if row else None
