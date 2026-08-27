@@ -140,6 +140,10 @@ def _trust_components(item: dict[str, Any], operation: str, *, image_only: bool 
                 "entailment_score": support.get("entailment_score"),
                 "extraction_confidence": support.get("confidence"),
                 "entity_resolution_confidence": entity_resolution,
+                "evidence_text": content,
+                "claim_subject": item.get("subject_name") or item.get("subject_text"),
+                "claim_predicate": item.get("canonical_predicate") or item.get("predicate"),
+                "claim_value": item.get("normalized_value") or item.get("object_text") or item.get("object_name"),
             }
         )
     fusion = fuse_evidence(bindings)

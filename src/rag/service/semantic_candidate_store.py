@@ -280,6 +280,10 @@ def _completion_fusion_binding(claim: CandidateClaim, chunks_by_id: dict[str, Ev
         "entailment_score": metadata.get("entailment_score"),
         "extraction_confidence": metadata.get("extraction_confidence", claim.confidence),
         "entity_resolution_confidence": metadata.get("entity_resolution_confidence", claim.confidence),
+        "evidence_text": content,
+        "claim_subject": claim.subject_name,
+        "claim_predicate": claim.predicate,
+        "claim_value": claim.normalized_value or claim.display_value or claim.object_value or claim.object_name,
     }
 
 

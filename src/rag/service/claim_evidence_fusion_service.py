@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from typing import Any, Iterable
 
 
@@ -23,6 +24,33 @@ def _clamp(value: Any) -> float:
         return max(0.0, min(1.0, float(value)))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _compact_text(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "")).casefold()
+
+
+def lexical_entailment_baseline(
+    evidence_text: Any, *, subject: Any = None, predicate: Any = None, value: Any = None
+) -> float | None:
+    """Conservative, explainable entailment baseline for extracted claims.
+
+    This is not an NLI model: it only rewards explicit lexical support and
+    keeps the score low when the claimed value is absent from the evidence.
+    """
+    text = _compact_text(evidence_text)
+    if not text:
+        return None
+    subject_match = bool(_compact_text(subject) and _compact_text(subject) in text)
+    value_match = bool(_compact_text(value) and _compact_text(value) in text)
+    predicate_match = bool(_compact_text(predicate) and _compact_text(predicate) in text)
+    if value_match and subject_match:
+        return 0.9 if predicate_match else 0.8
+    if value_match:
+        return 0.7
+    if subject_match and predicate_match:
+        return 0.45
+    return 0.15
 
 
 def evidence_support_score(
@@ -53,6 +81,13 @@ def fuse_evidence(
     enriched: list[dict[str, Any]] = []
     for binding in bindings:
         item = dict(binding or {})
+        if item.get("entailment_score") is None:
+            item["entailment_score"] = lexical_entailment_baseline(
+                item.get("evidence_text"),
+                subject=item.get("claim_subject"),
+                predicate=item.get("claim_predicate"),
+                value=item.get("claim_value"),
+            )
         score = evidence_support_score(item, weights)
         item["evidence_support_score"] = score
         source_key = str(item.get("source_independence_key") or item.get("source_key") or "unknown")
