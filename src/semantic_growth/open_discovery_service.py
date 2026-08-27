@@ -560,7 +560,7 @@ def persist_raw_discovery(*, growth_run_id: str, discoveries: list[dict[str, Any
                         returning id
                         """
                     ),
-                    {"uid": uid, "growth_run_id": growth_run_id, "unit_id": unit_id, **claim},
+                    {"uid": uid, "growth_run_id": growth_run_id, "unit_id": unit_id, **claim, "metadata": json.dumps(claim.get("metadata") or {}, ensure_ascii=False)},
                 ).scalar_one()
                 persisted_claims.append({**claim, "id": int(row), "raw_claim_uid": uid, "evidence_unit": unit})
                 claim_count += 1

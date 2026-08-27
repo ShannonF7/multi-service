@@ -16,6 +16,7 @@ from src.rag.dependencies import ai_session_scope
 from src.rag.schemas import CandidateClaim, ClaimConflict, SemanticCompleteRequest, EvidenceChunk
 from src.rag.service.value_normalization_service import canonical_predicate
 from src.rag.service.source_independence_service import source_independence_key
+from src.rag.service.claim_evidence_fusion_service import TRUST_VERSION, fuse_evidence
 from src.rag.service.conflict_classification_service import (
     classify_candidate_group,
     is_exclusive_relation,
@@ -257,6 +258,31 @@ def _claim_source_key(claim: CandidateClaim) -> str:
     })
 
 
+def _completion_fusion_binding(claim: CandidateClaim, chunks_by_id: dict[str, EvidenceChunk]) -> dict[str, Any]:
+    """Build the shared fusion input without changing completion ranking yet."""
+    metadata = claim.metadata if isinstance(claim.metadata, dict) else {}
+    chunk = chunks_by_id.get(str(claim.source_id or ""))
+    content = str(getattr(chunk, "content", "") or "")
+    quote = str(claim.quote or getattr(chunk, "quote", "") or "").strip()
+    if quote and content:
+        evidence_locality = 1.0 if quote in content else 0.5
+        quote_coverage = 1.0 if quote in content else min(1.0, len(quote) / max(1, len(content)))
+    else:
+        evidence_locality = 0.0
+        quote_coverage = 0.0
+    return {
+        "source_independence_key": _claim_source_key(claim),
+        "source_type": getattr(chunk, "source_type", None) or metadata.get("source_type") or metadata.get("provenance_type") or "unknown",
+        "source_quality": metadata.get("source_authority_score") or metadata.get("source_weight") or getattr(chunk, "source_weight", None),
+        "retrieval_relevance": metadata.get("retrieval_relevance") or getattr(chunk, "rerank_score", None) or getattr(chunk, "retrieval_score", None) or getattr(chunk, "score", None),
+        "quote_coverage": metadata.get("quote_coverage", quote_coverage),
+        "evidence_locality": metadata.get("evidence_locality", evidence_locality),
+        "entailment_score": metadata.get("entailment_score"),
+        "extraction_confidence": metadata.get("extraction_confidence", claim.confidence),
+        "entity_resolution_confidence": metadata.get("entity_resolution_confidence", claim.confidence),
+    }
+
+
 def _claim_allows_multi_value(payload: SemanticCompleteRequest, claim: CandidateClaim) -> bool:
     predicate = canonical_predicate(claim.predicate or "", temporal_role=claim.temporal_role).strip()
     if claim.claim_type == "property":
@@ -377,6 +403,22 @@ def persist_semantic_candidates(
         if len(values) > 1 and not key_requires_single_value.get(key, True)
     }
 
+    # Compute trust-v1 per canonical value as a shadow result.  Candidate
+    # recommendation still uses the existing score until the UI/thresholds are
+    # explicitly migrated, but every completion candidate now carries the same
+    # explainable fusion contract as growth candidates.
+    fusion_bindings: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for claim in claims:
+        if not claim.quote:
+            continue
+        identity = (_conflict_key(payload, claim), _claim_value(claim))
+        if identity[1]:
+            fusion_bindings.setdefault(identity, []).append(_completion_fusion_binding(claim, chunks_by_id))
+    fusion_by_claim_id: dict[str, dict[str, Any]] = {}
+    for claim in claims:
+        identity = (_conflict_key(payload, claim), _claim_value(claim))
+        fusion_by_claim_id[str(claim.claim_id)] = fuse_evidence(fusion_bindings.get(identity, []))
+
     saved = 0
     conflict_group_ids: set[str] = set()
     saved_group_claims: list[CandidateClaim] = []
@@ -401,6 +443,7 @@ def persist_semantic_candidates(
             ctype = _candidate_type(payload, claim)
             raw = _claim_dict(claim)
             source_meta = _source_weight_metadata(claim)
+            fusion = fusion_by_claim_id.get(str(claim.claim_id)) or fuse_evidence([])
             malformed_reason = _malformed_claim_reason(claim)
             metadata = {
                 "a_user_id": (payload.metadata or {}).get("user_id"),
@@ -439,6 +482,8 @@ def persist_semantic_candidates(
                 "value_policy": "multi_value" if _claim_allows_multi_value(payload, claim) else "single_value",
                 "is_recommended": False,
                 "recommendation_rank": None,
+                "source_independence_key": _claim_source_key(claim),
+                "trust_v1_shadow": fusion,
             }
             claim_status = "INVALIDATED" if malformed_reason else _status_for_claim(claim, forced_conflict)
             row = db.execute(
@@ -569,9 +614,9 @@ def persist_semantic_candidates(
                     "metadata": _json(metadata),
                     "canonical_claim_key": (claim.metadata or {}).get("canonical_claim_key"),
                     "conflict_scope_key": (claim.metadata or {}).get("conflict_scope_key"),
-                    "trust_version": "completion-v1",
-                    "trust_components": _json(source_meta.get("score_components") or {}),
-                    "final_trust_score": float(claim.recommend_score or 0.0),
+                    "trust_version": TRUST_VERSION,
+                    "trust_components": _json(fusion),
+                    "final_trust_score": float(fusion.get("evidence_support_score") or claim.recommend_score or 0.0),
                 },
             ).mappings().first()
             candidate_id = int(row["id"]) if row else None
@@ -591,6 +636,8 @@ def persist_semantic_candidates(
                 "provenance_type": source_meta.get("provenance_type"),
                 "retrieval_method": source_meta.get("retrieval_method"),
                 "authority_class": source_meta.get("authority_class"),
+                "source_independence_key": _claim_source_key(claim),
+                "trust_v1_shadow": fusion,
             })
             if candidate_id is not None:
                 saved_group_claims.append(claim)
@@ -609,6 +656,7 @@ def persist_semantic_candidates(
             value_sources: dict[str, set[str]] = {}
             value_candidate_uids: dict[str, list[str]] = {}
             source_records: dict[str, dict[str, Any]] = {}
+            value_fusion: dict[str, dict[str, Any]] = {}
             for item in group_claims_for_key:
                 value = _claim_value(item)
                 source_key = _claim_source_key(item)
@@ -616,6 +664,8 @@ def persist_semantic_candidates(
                     value_sources.setdefault(value, set()).add(source_key)
                 if value and isinstance(item.metadata, dict) and item.metadata.get("candidate_uid"):
                     value_candidate_uids.setdefault(value, []).append(str(item.metadata.get("candidate_uid")))
+                if value and value not in value_fusion:
+                    value_fusion[value] = fusion_by_claim_id.get(str(item.claim_id)) or fuse_evidence([])
                 if source_key:
                     source_records[source_key] = {
                         "source_key": source_key,
@@ -675,6 +725,8 @@ def persist_semantic_candidates(
                             "recommendation_rank": rank,
                             "same_value_source_count": len(value_sources.get(value, set())),
                             "same_value_sources": sorted(value_sources.get(value, set())),
+                            "source_independence_key": _claim_source_key(item),
+                            "trust_v1_shadow": fusion_by_claim_id.get(str(item.claim_id)) or fuse_evidence([]),
                             "group_candidate_count": len(group_claims_for_key),
                             "group_distinct_value_count": len(values),
                             "group_source_count": len(sources),
@@ -744,6 +796,7 @@ def persist_semantic_candidates(
                         "value_sources": {key: sorted(items) for key, items in value_sources.items()},
                         "value_candidate_uids": value_candidate_uids,
                         "source_records": list(source_records.values()),
+                        "value_trust_v1_shadow": value_fusion,
                         "claim_ids": [item.claim_id for item in group_claims_for_key],
                         "allow_multi_value": allow_multi_value,
                         "value_policy": "multi_value" if allow_multi_value else "single_value",
