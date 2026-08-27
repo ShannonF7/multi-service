@@ -9,6 +9,7 @@ from typing import Any
 
 from src.rag.schemas import CandidateClaim, ClaimConflict, SemanticCompleteRequest
 from src.rag.service.value_normalization_service import canonical_predicate
+from src.rag.service.source_independence_service import source_independence_key
 
 from src.rag.service.claim_policy_service import (
     COMPATIBLE_TEMPORAL_ROLES,
@@ -46,8 +47,21 @@ def _same_value(left: str, right: str) -> bool:
 
 
 def _source_key(claim: CandidateClaim) -> str:
-    evidence = ",".join(str(x) for x in (claim.evidence_ids or []))
-    return str(claim.source_url or evidence or claim.source_id or "").strip()
+    """Return the shared independence key for one claim evidence source.
+
+    Chunks from one document/image count as one source during conflict
+    classification, avoiding support inflation from chunk fan-out.
+    """
+    metadata = claim.metadata if isinstance(claim.metadata, dict) else {}
+    return source_independence_key({
+        "source_type": metadata.get("source_type") or metadata.get("provenance_type"),
+        "asset_id": metadata.get("asset_id") or metadata.get("image_asset_id") or metadata.get("source_asset_id"),
+        "source_doc_id": metadata.get("source_doc_id") or metadata.get("doc_id"),
+        "source_url": claim.source_url or metadata.get("source_url"),
+        "source_id": claim.source_id,
+        "chunk_id": metadata.get("chunk_id"),
+        "evidence_unit_uid": claim.source_id,
+    })
 
 
 def _schema(payload: SemanticCompleteRequest) -> dict[str, Any]:

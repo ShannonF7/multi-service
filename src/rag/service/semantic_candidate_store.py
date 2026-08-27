@@ -250,6 +250,7 @@ def _claim_source_key(claim: CandidateClaim) -> str:
     metadata = claim.metadata if isinstance(claim.metadata, dict) else {}
     return source_independence_key({
         "source_type": metadata.get("source_type") or metadata.get("provenance_type"),
+        "asset_id": metadata.get("asset_id") or metadata.get("image_asset_id") or metadata.get("source_asset_id"),
         "source_doc_id": metadata.get("source_doc_id") or metadata.get("doc_id"),
         "source_url": claim.source_url or metadata.get("source_url"),
         "source_id": claim.source_id,
@@ -448,10 +449,20 @@ def persist_semantic_candidates(
             conflict_group = _hash({"conflict_key": key})[:32] if forced_conflict else ""
             if conflict_group:
                 conflict_group_ids.add(conflict_group)
-            candidate_uid = _candidate_uid(payload, trace_id, claim)
+            canonical_key = str((claim.metadata or {}).get("canonical_claim_key") or "").strip()
+            existing = None
+            if canonical_key:
+                existing = db.execute(text("select candidate_uid, evidence_ids, metadata, status from semantic_claim_candidates where source_scenic_id = :source_scenic_id and canonical_claim_key = :canonical_claim_key and upper(coalesce(status, '')) not in ('REJECTED', 'INVALIDATED') order by case when upper(coalesce(status, '')) in ('ADOPTED', 'PUBLISHED') then 0 else 1 end, updated_at desc nulls last, id desc limit 1"), {"source_scenic_id": str(payload.scenic_id), "canonical_claim_key": canonical_key}).mappings().first()
+            candidate_uid = str(existing["candidate_uid"]) if existing else _candidate_uid(payload, trace_id, claim)
             ctype = _candidate_type(payload, claim)
             raw = _claim_dict(claim)
             source_meta = _source_weight_metadata(claim)
+            existing_evidence_ids = []
+            existing_metadata: dict[str, Any] = {}
+            if existing:
+                existing_evidence_ids = [int(item) for item in (existing.get("evidence_ids") or []) if str(item).strip()]
+                existing_metadata = existing.get("metadata") if isinstance(existing.get("metadata"), dict) else {}
+            merged_evidence_ids = sorted(set(existing_evidence_ids + [int(item) for item in (claim.evidence_ids or [])]))
             fusion = fusion_by_claim_id.get(str(claim.claim_id)) or fuse_evidence([])
             malformed_reason = _malformed_claim_reason(claim)
             metadata = {
@@ -493,7 +504,18 @@ def persist_semantic_candidates(
                 "recommendation_rank": None,
                 "source_independence_key": _claim_source_key(claim),
                 "trust_v1_shadow": fusion,
+                "evidence_provenance": [
+                    *(existing_metadata.get("evidence_provenance") if isinstance(existing_metadata.get("evidence_provenance"), list) else []),
+                    {"source_id": claim.source_id, "source_url": claim.source_url, "source_title": _resolve_source_title(claim, chunks_by_id), "source_independence_key": _claim_source_key(claim), "evidence_ids": claim.evidence_ids or []},
+                ],
             }
+            provenance = metadata.get("evidence_provenance") or []
+            unique_provenance = {}
+            for item in provenance:
+                if isinstance(item, dict):
+                    key_value = str(item.get("source_independence_key") or item.get("source_id") or item.get("source_url") or "")
+                    unique_provenance[key_value] = item
+            metadata["evidence_provenance"] = list(unique_provenance.values())
             claim_status = "INVALIDATED" if malformed_reason else _status_for_claim(claim, forced_conflict)
             row = db.execute(
                 text(
@@ -528,8 +550,8 @@ def persist_semantic_candidates(
                         cast(:trust_components as jsonb), :final_trust_score, now()
                     )
                     on conflict (candidate_uid) do update set
-                        status = excluded.status,
-                        confidence = excluded.confidence,
+                        status = case when upper(coalesce(semantic_claim_candidates.status, '')) in ('ADOPTED', 'PUBLISHED') then semantic_claim_candidates.status else excluded.status end,
+                        confidence = greatest(coalesce(semantic_claim_candidates.confidence, 0), excluded.confidence),
                         evidence_score = excluded.evidence_score,
                         evidence_status = excluded.evidence_status,
                         question_id = excluded.question_id,
@@ -557,7 +579,7 @@ def persist_semantic_candidates(
                         score_components = excluded.score_components,
                         conflict_group = excluded.conflict_group,
                         raw_payload = excluded.raw_payload,
-                        metadata = excluded.metadata,
+                        metadata = coalesce(semantic_claim_candidates.metadata, '{}'::jsonb) || excluded.metadata,
                         canonical_claim_key = excluded.canonical_claim_key,
                         conflict_scope_key = excluded.conflict_scope_key,
                         trust_version = excluded.trust_version,
@@ -595,7 +617,7 @@ def persist_semantic_candidates(
                     "status": claim_status,
                     "job_id": int(job_id) if job_id is not None else None,
                     "question_id": claim.question_id,
-                    "evidence_ids": _json(claim.evidence_ids or []),
+                    "evidence_ids": _json(merged_evidence_ids),
                     "recommend_score": float(claim.recommend_score or 0.0),
                     "support_status": str(claim.support_status or "needs_more_evidence"),
                     "candidate_group_key": getattr(claim, "candidate_group_key", None),
@@ -909,14 +931,15 @@ def list_semantic_candidates(
     # preferred terminal/reviewed row when it exists.
     identity_partition = """
         source_scenic_id,
-        source_node_id,
-        lower(trim(coalesce(claim_type, ''))),
-        lower(trim(coalesce(predicate, ''))),
-        lower(trim(coalesce(object_value, ''))),
-        lower(trim(coalesce(object_name, ''))),
-        lower(trim(coalesce(target_node_id::text, ''))),
-        lower(trim(coalesce(target_node_candidate_id::text, ''))),
-        lower(trim(coalesce(source_url, source_id, source_title, '')))
+        coalesce(nullif(lower(trim(canonical_claim_key)), ''), concat_ws('|',
+            lower(trim(coalesce(source_node_id, ''))),
+            lower(trim(coalesce(claim_type, ''))),
+            lower(trim(coalesce(predicate, ''))),
+            lower(trim(coalesce(object_value, ''))),
+            lower(trim(coalesce(object_name, ''))),
+            lower(trim(coalesce(target_node_id::text, ''))),
+            lower(trim(coalesce(target_node_candidate_id::text, ''))),
+            lower(trim(coalesce(source_url, source_id, source_title, '')))))
     """
     ranked_from = """
         select c.*,

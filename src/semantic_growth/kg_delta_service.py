@@ -26,13 +26,23 @@ def _relation_key(value: Any) -> str:
     return canonical_predicate(RELATION_ALIASES.get(raw, raw))
 
 
-def _property_policy(predicate: str, temporal_role: str | None = None) -> dict[str, str]:
-    """Resolve the shared property policy used by KG-delta classification."""
+def _property_policy(predicate: str, temporal_role: str | None = None, domain_schema: dict[str, Any] | None = None) -> dict[str, str]:
+    """Resolve domain schema policy first, then the shared default."""
+    schema = domain_schema if isinstance(domain_schema, dict) else {}
+    props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    config = props.get(predicate) if isinstance(props, dict) else None
+    if isinstance(config, dict) and config.get("cardinality") in {"single", "multi"}:
+        return {"cardinality": str(config["cardinality"]), "conflict_policy": str(config.get("conflict_policy") or ("exclusive" if config["cardinality"] == "single" else "append"))}
     return default_property_policy(predicate, temporal_role)
 
 
-def _relation_policy(predicate: str) -> dict[str, str]:
-    """Resolve the shared relation policy used by KG-delta classification."""
+def _relation_policy(predicate: str, domain_schema: dict[str, Any] | None = None) -> dict[str, str]:
+    """Resolve relation cardinality from domain schema when provided."""
+    schema = domain_schema if isinstance(domain_schema, dict) else {}
+    rels = schema.get("relations") if isinstance(schema.get("relations"), dict) else {}
+    config = rels.get(predicate) if isinstance(rels, dict) else None
+    if isinstance(config, dict) and config.get("cardinality") in {"single", "multi"}:
+        return {"cardinality": str(config["cardinality"]), "conflict_policy": str(config.get("conflict_policy") or ("exclusive" if config["cardinality"] == "single" else "append"))}
     return default_relation_policy(predicate)
 
 
@@ -161,7 +171,7 @@ def _published_property_values(properties: Any, predicate: str) -> list[str]:
 
 
 def classify_kg_deltas(
-    *, source_scenic_id: str, aggregated_claims: list[dict[str, Any]]
+    *, source_scenic_id: str, aggregated_claims: list[dict[str, Any]], domain_schema: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
     """Classify normalized claims as EXISTS, ADD, or CONFLICT against formal facts.
 
@@ -213,7 +223,7 @@ def classify_kg_deltas(
         elif item["claim_type"] == "property":
             source_node_id = str(subject.get("node_id") or "")
             published = _published_property_values((node_rows.get(source_node_id) or {}).get("properties"), predicate)
-            candidate_value = str(item.get("normalized_value") or "")
+            candidate_value = normalize_text_value(str(item.get("normalized_value") or "")).casefold()
             if candidate_value and candidate_value in published:
                 operation, reason = "EXISTS", "published_property_same_value"
             elif not published:
@@ -222,7 +232,7 @@ def classify_kg_deltas(
                 operation, reason = "DEPRECATE", "evidence_explicitly_deprecates_existing_fact"
             elif UPDATE_CUES.search(quote):
                 operation, reason = "UPDATE", "evidence_explicitly_replaces_existing_value"
-            elif _property_policy(predicate, item.get("temporal_role"))["conflict_policy"] != "exclusive":
+            elif _property_policy(predicate, item.get("temporal_role"), domain_schema)["conflict_policy"] != "exclusive":
                 operation, reason = "ADD", "multi_value_property_can_coexist"
             else:
                 operation, reason = "CONFLICT", "exclusive_property_has_different_value"
@@ -243,7 +253,7 @@ def classify_kg_deltas(
                 # cardinality branch below overwrite EXISTS with ADD.
                 operation, reason = "EXISTS", "published_relation_same_target"
             else:
-                relation_policy = _relation_policy(predicate)
+                relation_policy = _relation_policy(predicate, domain_schema)
                 if not same_predicate:
                     operation, reason = "ADD", "new_relation_for_existing_entity"
                 elif relation_policy["conflict_policy"] != "exclusive":
@@ -252,7 +262,7 @@ def classify_kg_deltas(
                     operation, reason = "UPDATE", "evidence_explicitly_replaces_relation_target"
                 else:
                     operation, reason = "CONFLICT", "exclusive_relation_has_different_target"
-        delta_policy = _property_policy(predicate, item.get("temporal_role")) if item["claim_type"] == "property" else _relation_policy(predicate)
+        delta_policy = _property_policy(predicate, item.get("temporal_role"), domain_schema) if item["claim_type"] == "property" else _relation_policy(predicate, domain_schema)
         result.append({**item, "update_operation": operation, "delta_reason": reason, "delta_policy": delta_policy})
     return result
 

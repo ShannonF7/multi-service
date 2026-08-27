@@ -63,6 +63,7 @@ def _build_initial_state(run: dict[str, Any], payload: dict[str, Any]) -> dict[s
         "thread_id": run["thread_id"],
         "domain_id": run["domain_id"],
         "scenic_id": run.get("scenic_id") or "",
+        "domain_schema": payload.get("domain_schema") or {},
         "seed_node_ids": run.get("seed_node_ids") or [],
         "iteration": 0,
         "max_iterations": int(run.get("max_iterations") or 5),

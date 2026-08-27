@@ -14,6 +14,7 @@ class GrowthState(TypedDict, total=False):
     thread_id: str
     domain_id: str
     scenic_id: str
+    domain_schema: dict[str, Any]
 
     # ── Control ──
     iteration: int

@@ -176,6 +176,7 @@ def open_discovery_batch(state: GrowthState) -> dict[str, Any]:
             batch=batch,
             iteration=int(state.get("batch_iteration") or 1),
             max_concurrency=int(state.get("extraction_concurrency") or 4),
+            domain_schema=state.get("domain_schema") or {},
         )
     except Exception as exc:
         logger.exception("open discovery failed for growth run %s", growth_run_id)

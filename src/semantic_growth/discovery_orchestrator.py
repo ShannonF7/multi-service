@@ -131,6 +131,7 @@ def run_open_discovery_batch(
     batch: list[dict[str, Any]],
     iteration: int,
     max_concurrency: int = 4,
+    domain_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     units = materialize_evidence_units(
         growth_run_id=growth_run_id,
@@ -147,6 +148,7 @@ def run_open_discovery_batch(
     classified = classify_kg_deltas(
         source_scenic_id=source_scenic_id,
         aggregated_claims=aggregation["aggregated_claims"],
+        domain_schema=domain_schema,
     )
     delta = persist_kg_deltas(
         growth_run_id=growth_run_id,

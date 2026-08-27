@@ -38,6 +38,7 @@ from src.rag.service.planner_service import CompletionQuestion, plan_completion_
 from src.rag.service.value_normalization_service import normalize_candidate_claims, canonical_predicate, normalize_text_value
 from src.rag.service.claim_contract import CanonicalClaim
 from src.rag.service.claim_identity_service import claim_keys
+from src.rag.service.claim_type_router import route_claim
 from src.rag.service.candidate_grouping_service import annotate_candidate_groups, assign_candidate_group_keys
 from src.rag.service.conflict_classification_service import classify_conflicts
 from src.rag.service.entity_resolution_service import resolve_candidate_entities
@@ -1206,7 +1207,17 @@ def claims_from_tool_calls(
         if source_id in source_evidence_map:
             evidence_ids = [int(source_evidence_map[source_id])]
         question_value = question_id or (chunk.question_id if chunk else "")
-        canonical_type = "RELATION" if claim_type == "relation" else "BACKGROUND" if claim_type == "fact" else "PROPERTY"
+        # Keep completion and open discovery on the same claim-type contract.
+        routed = route_claim(
+            claim_type="RELATION" if claim_type == "relation" else "PROPERTY" if claim_type == "property" else "BACKGROUND",
+            predicate=predicate_value,
+            value=claim_value,
+            raw_text=quote_value,
+            schema=get_domain_schema(payload),
+        )
+        canonical_type = routed["claim_type"]
+        semantic_role = routed.get("semantic_role") or ""
+        candidate_claim_type = "fact" if canonical_type == "BACKGROUND" else canonical_type.lower()
         canonical_value = (
             normalize_text_value(claim_value).casefold()
             if canonical_type != "RELATION"
@@ -1232,16 +1243,16 @@ def claims_from_tool_calls(
         identity = claim_keys(canonical_claim)
         selected_props = {str(x or "").strip() for x in (payload.target_fields or []) if str(x or "").strip()}
         selected_rels = {str(x or "").strip() for x in (payload.relation_intents or []) if str(x or "").strip()}
-        if claim_type == "property":
+        if candidate_claim_type == "property":
             discovery_scope = "open" if allow_open_discovery(payload) and predicate_value not in selected_props else "template"
-        elif claim_type == "relation":
+        elif candidate_claim_type == "relation":
             discovery_scope = "open" if allow_open_discovery(payload) and predicate_value not in selected_rels else "template"
         else:
             discovery_scope = "background"
         claims.append(
             CandidateClaim(
                 claim_id=f"c_{len(claims)+1:03d}",
-                claim_type=claim_type,
+                claim_type=candidate_claim_type,
                 subject_node_id=str(payload.node.source_node_id),
                 subject_name=payload.node.name,
                 predicate=predicate_value,
@@ -1262,6 +1273,8 @@ def claims_from_tool_calls(
                     "completion_mode": completion_mode(payload),
                     "canonical_claim_key": identity["canonical_claim_key"],
                     "conflict_scope_key": identity["conflict_scope_key"],
+                    "semantic_role": semantic_role,
+                    "raw_predicate": predicate_value,
                 },
             )
         )

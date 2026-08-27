@@ -68,6 +68,7 @@ def create_run(payload: dict[str, Any]) -> dict[str, Any]:
         "metadata": _json({
             "mock_candidate": payload.get("mock_candidate") or {},
             "growth_track": "OPEN_DISCOVERY",
+            "domain_schema": payload.get("domain_schema") or {},
             "discovery_budget": int(payload.get("max_evidence_per_run") or 500),
             "image_discovery_budget": int(payload.get("max_image_evidence_per_run") or 32),
             "extraction_concurrency": int(payload.get("extraction_concurrency") or 4),
