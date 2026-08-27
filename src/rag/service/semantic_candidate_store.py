@@ -375,6 +375,11 @@ def persist_semantic_candidates(
     conflicts: list[ClaimConflict],
     chunks: list[EvidenceChunk],
 ) -> dict[str, Any]:
+    """Persist completion claims after canonical identity and policy checks.
+
+    Called by the semantic completion job; input includes claims, conflicts,
+    and evidence chunks, and output reports saved candidates and conflict groups.
+    """
     if not claims:
         return {"saved": 0, "conflict_groups": 0}
 

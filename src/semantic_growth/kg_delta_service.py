@@ -10,67 +10,31 @@ from sqlalchemy import text
 from src.rag.dependencies import ai_session_scope
 from src.rag.service.value_normalization_service import canonical_predicate, normalize_text_value
 from src.rag.service.claim_evidence_fusion_service import fuse_evidence
+from src.rag.service.claim_policy_service import (
+    RELATION_ALIASES,
+    default_property_policy,
+    default_relation_policy,
+)
 
 
-# G2 policy: different values are only conflicts when the schema says the
-# predicate is exclusive. Multi-value properties/relations remain appendable.
-PROPERTY_POLICIES = {
-    "别名": {"cardinality": "multi", "conflict_policy": "append"},
-    "简称": {"cardinality": "multi", "conflict_policy": "append"},
-    "荣誉": {"cardinality": "multi", "conflict_policy": "append"},
-    "特色": {"cardinality": "multi", "conflict_policy": "append"},
-    "描述": {"cardinality": "multi", "conflict_policy": "append"},
-    "简介": {"cardinality": "multi", "conflict_policy": "append"},
-    "历史沿革": {"cardinality": "multi", "conflict_policy": "append"},
-    "作品": {"cardinality": "multi", "conflict_policy": "append"},
-    "活动": {"cardinality": "multi", "conflict_policy": "append"},
-    "功能": {"cardinality": "multi", "conflict_policy": "append"},
-    "用途": {"cardinality": "multi", "conflict_policy": "append"},
-}
-RELATION_POLICIES = {
-    "空间位置": {"cardinality": "single", "conflict_policy": "exclusive"},
-    "归属": {"cardinality": "single", "conflict_policy": "exclusive"},
-    "上级区域": {"cardinality": "single", "conflict_policy": "exclusive"},
-    "所属景区": {"cardinality": "single", "conflict_policy": "exclusive"},
-    "隶属": {"cardinality": "single", "conflict_policy": "exclusive"},
-    "所属机构": {"cardinality": "single", "conflict_policy": "exclusive"},
-    "父级": {"cardinality": "single", "conflict_policy": "exclusive"},
-}
-EXCLUSIVE_RELATIONS = {key for key, policy in RELATION_POLICIES.items() if policy["conflict_policy"] == "exclusive"}
-UPDATE_CUES = re.compile(r"(改为|更名为|迁至|现为|调整为|更新为|变更为)")
-DEPRECATE_CUES = re.compile(r"(不再|废止|撤销|拆除|毁损|消失|停用|废弃)")
-
-_RELATION_ALIAS_MAP = {
-    "located_in": "空间位置",
-    "所在地": "空间位置",
-    "位置": "空间位置",
-    "位于": "空间位置",
-    "坐落于": "空间位置",
-    "parent_organization": "所属机构",
-    "隶属机构": "所属机构",
-    "所属机构": "所属机构",
-    "merged_with": "合并对象",
-    "合并组成单位": "合并对象",
-}
+# G2 policy defaults are centralized so completion and growth share one
+# cardinality/exclusivity contract; domain schema values override at runtime.
 
 
 def _relation_key(value: Any) -> str:
     raw = str(value or "").strip()
-    return canonical_predicate(_RELATION_ALIAS_MAP.get(raw, raw))
+    return canonical_predicate(RELATION_ALIASES.get(raw, raw))
 
 
 def _property_policy(predicate: str, temporal_role: str | None = None) -> dict[str, str]:
-    # Temporal roles such as renovation/history can coexist with construction
-    # time; they must not be collapsed into a single-value conflict.
-    if str(temporal_role or "") in {"renovation_time", "legend_time"}:
-        return {"cardinality": "multi", "conflict_policy": "append"}
-    raw = str(predicate or "").strip()
-    canonical = canonical_predicate(raw)
-    return PROPERTY_POLICIES.get(raw) or PROPERTY_POLICIES.get(canonical) or {"cardinality": "single", "conflict_policy": "exclusive"}
+    """Resolve the shared property policy used by KG-delta classification."""
+    return default_property_policy(predicate, temporal_role)
 
 
 def _relation_policy(predicate: str) -> dict[str, str]:
-    return RELATION_POLICIES.get(_relation_key(predicate), {"cardinality": "multi", "conflict_policy": "append"})
+    """Resolve the shared relation policy used by KG-delta classification."""
+    return default_relation_policy(predicate)
+
 
 
 _BOOLEAN_CLAUSE_CUES = (
@@ -199,6 +163,11 @@ def _published_property_values(properties: Any, predicate: str) -> list[str]:
 def classify_kg_deltas(
     *, source_scenic_id: str, aggregated_claims: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
+    """Classify normalized claims as EXISTS, ADD, or CONFLICT against formal facts.
+
+    Input is the aggregated claim list produced by the growth discovery graph;
+    output is a KG-delta list consumed by ``persist_kg_deltas``.
+    """
     subject_ids = {
         str(item.get("subject_resolution", {}).get("node_id") or "")
         for item in aggregated_claims
@@ -345,6 +314,11 @@ def _bind_existing_fact(
 def persist_kg_deltas(
     *, growth_run_id: str, source_scenic_id: str, classified_claims: list[dict[str, Any]]
 ) -> dict[str, Any]:
+    """Persist G2 delta results and bind EXISTS claims to formal facts.
+
+    Input is the output of ``classify_kg_deltas``; output contains operation
+    counts, candidate IDs, trust/risk summaries, and evidence bindings.
+    """
     candidate_ids: list[int] = []
     exists_count = 0
     operation_counts: dict[str, int] = {}

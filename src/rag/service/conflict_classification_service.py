@@ -10,19 +10,14 @@ from typing import Any
 from src.rag.schemas import CandidateClaim, ClaimConflict, SemanticCompleteRequest
 from src.rag.service.value_normalization_service import canonical_predicate
 
-EXCLUSIVE_RELATIONS = {
-    "\u4f4d\u4e8e", "\u5c5e\u4e8e", "\u5f52\u5c5e", "\u4e0a\u7ea7\u533a\u57df", "\u6240\u5c5e\u666f\u533a", "\u7236\u7ea7", "\u4e0b\u4f0f\u4e8e", "\u4e0a\u8986\u4e8e"
-}
+from src.rag.service.claim_policy_service import (
+    COMPATIBLE_TEMPORAL_ROLES,
+    EXCLUSIVE_RELATIONS,
+    MULTI_VALUE_KEYWORDS,
+    MULTI_VALUE_PROPERTIES,
+    TEMPORAL_CONFLICT_ROLES,
+)
 
-MULTI_VALUE_PROPERTIES = {
-    "\u7b80\u4ecb", "\u63cf\u8ff0", "\u63cf\u8ff0\u7b80\u4ecb", "\u6982\u8ff0", "\u4ecb\u7ecd", "\u6458\u8981", "\u7279\u8272", "\u7279\u5f81", "\u6587\u732e\u8bb0\u8f7d",
-    "\u5386\u53f2\u6cbf\u9769", "\u5730\u8d28\u6210\u56e0", "\u5730\u5f62\u7279\u5f81", "\u5730\u8c8c\u7279\u5f81", "\u7ec4\u6210", "\u6784\u6210", "\u5ca9\u6027",
-    "\u8363\u8a89", "\u4f5c\u54c1", "\u6d3b\u52a8", "\u529f\u80fd", "\u7528\u9014", "\u529f\u80fd\u7528\u9014", "\u5907\u6ce8", "\u8bf4\u660e"
-}
-
-MULTI_VALUE_KEYWORDS = ("\u7b80\u4ecb", "\u63cf\u8ff0", "\u6982\u8ff0", "\u4ecb\u7ecd", "\u6458\u8981", "\u7279\u5f81", "\u7279\u8272", "\u8bb0\u8f7d", "\u6cbf\u9769", "\u6210\u56e0", "\u7ec4\u6210", "\u6784\u6210", "\u8bf4\u660e", "\u5907\u6ce8", "\u529f\u80fd", "\u7528\u9014")
-TEMPORAL_CONFLICT_ROLES = {"construction_time", "current_status_time", "protection_time"}
-COMPATIBLE_TEMPORAL_ROLES = {"renovation_time", "legend_time"}
 CONFLICT_CLASSES = {"conflicting", "scope_mismatch", "entity_ambiguity"}
 
 
@@ -145,6 +140,12 @@ def _distinct_values(claims: list[CandidateClaim]) -> list[str]:
 
 
 def classify_candidate_group(claims: list[CandidateClaim], payload: SemanticCompleteRequest | None = None) -> dict[str, Any]:
+    """Classify one subject/predicate group for review and conflict policy.
+
+    Input is the normalized candidate group; output contains conflict class,
+    review gap status, distinct values, source count, and best claim.
+    Called by ``persist_semantic_candidates`` before group persistence.
+    """
     if not claims:
         return {"conflict_class": "unsupported", "gap_status": "no_evidence", "candidate_count": 0, "distinct_value_count": 0, "source_count": 0, "best_claim_id": None, "recommend_score": 0.0}
     values = _distinct_values(claims)
@@ -198,6 +199,7 @@ def classify_candidate_group(claims: list[CandidateClaim], payload: SemanticComp
 
 
 def compare_with_existing_graph(payload: SemanticCompleteRequest, claims: list[CandidateClaim]) -> list[ClaimConflict]:
+    """Compare completion claims with published properties and relations."""
     conflicts: list[ClaimConflict] = []
     for claim in claims:
         pred = canonical_predicate(claim.predicate or "", temporal_role=claim.temporal_role).strip()
@@ -234,6 +236,7 @@ def compare_with_existing_graph(payload: SemanticCompleteRequest, claims: list[C
 
 
 def compare_candidate_groups(payload: SemanticCompleteRequest, claims: list[CandidateClaim]) -> list[ClaimConflict]:
+    """Detect conflicts between different values in the current completion run."""
     grouped: dict[tuple[str, str, str, str], list[CandidateClaim]] = defaultdict(list)
     for claim in claims:
         pred = canonical_predicate(claim.predicate or "", temporal_role=claim.temporal_role).strip()
@@ -252,6 +255,7 @@ def compare_candidate_groups(payload: SemanticCompleteRequest, claims: list[Cand
 
 
 def classify_conflicts(payload: SemanticCompleteRequest, claims: list[CandidateClaim]) -> list[ClaimConflict]:
+    """Run graph comparison and same-run grouping, de-duplicating conflict IDs."""
     conflicts = compare_with_existing_graph(payload, claims)
     existing_ids = {str(item.claim_id) for item in conflicts if item.claim_id}
     for item in compare_candidate_groups(payload, claims):
