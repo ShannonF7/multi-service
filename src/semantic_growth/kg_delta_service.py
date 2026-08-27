@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from src.rag.dependencies import ai_session_scope
 from src.rag.service.value_normalization_service import canonical_predicate, normalize_text_value
-from src.rag.service.claim_evidence_fusion_service import fuse_evidence
+from src.rag.service.claim_evidence_fusion_service import fuse_evidence, semantic_trust_score
 from src.rag.service.claim_policy_service import (
     RELATION_ALIASES,
     default_property_policy,
@@ -129,13 +129,7 @@ def _trust_components(item: dict[str, Any], operation: str, *, image_only: bool 
     )
     if image_only:
         conflict_risk = max(conflict_risk, 0.35)
-    trust = _clamp(
-        0.55 * float(fusion["evidence_support_score"])
-        + 0.20 * entity_resolution
-        + 0.15 * float(fusion["source_quality"])
-        + 0.10 * float(fusion["cross_source_support"])
-        - 0.10 * conflict_risk
-    )
+    trust = semantic_trust_score(fusion, entity_resolution_confidence=entity_resolution, conflict_risk=conflict_risk)
     return {
         "evidence_count": int(fusion["evidence_count"]),
         "independent_source_count": int(fusion["independent_source_count"]),

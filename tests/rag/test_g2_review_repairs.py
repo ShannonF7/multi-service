@@ -1,4 +1,5 @@
 from src.rag.schemas import EvidenceChunk, SemanticCompleteRequest
+from src.rag.service.claim_evidence_fusion_service import semantic_trust_score
 from src.rag.service.conflict_classification_service import _source_key
 from src.rag.service.semantic_completion_service import claims_from_tool_calls
 from src.semantic_growth.kg_delta_service import _property_policy, _relation_policy
@@ -44,3 +45,9 @@ def test_source_key_groups_chunks_from_same_document():
 def test_growth_schema_overrides_default_cardinality():
     assert _property_policy("建筑高度", domain_schema={"properties": {"建筑高度": {"cardinality": "multi"}}})["conflict_policy"] == "append"
     assert _relation_policy("位于", domain_schema={"relations": {"位于": {"cardinality": "multi"}}})["conflict_policy"] == "append"
+
+
+def test_completion_and_growth_use_same_trust_formula():
+    fusion = {"evidence_support_score": 0.8, "source_quality": 0.7, "cross_source_support": 0.5}
+    assert semantic_trust_score(fusion, entity_resolution_confidence=0.9, conflict_risk=0.0) == 0.775
+    assert semantic_trust_score(fusion, entity_resolution_confidence=0.9, conflict_risk=1.0) == 0.675

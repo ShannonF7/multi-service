@@ -16,7 +16,7 @@ from src.rag.dependencies import ai_session_scope
 from src.rag.schemas import CandidateClaim, ClaimConflict, SemanticCompleteRequest, EvidenceChunk
 from src.rag.service.value_normalization_service import canonical_predicate
 from src.rag.service.source_independence_service import source_independence_key
-from src.rag.service.claim_evidence_fusion_service import TRUST_VERSION, fuse_evidence
+from src.rag.service.claim_evidence_fusion_service import TRUST_VERSION, fuse_evidence, semantic_trust_score
 from src.rag.service.conflict_classification_service import (
     classify_candidate_group,
     is_exclusive_relation,
@@ -517,6 +517,11 @@ def persist_semantic_candidates(
                     unique_provenance[key_value] = item
             metadata["evidence_provenance"] = list(unique_provenance.values())
             claim_status = "INVALIDATED" if malformed_reason else _status_for_claim(claim, forced_conflict)
+            final_trust_score = semantic_trust_score(
+                fusion,
+                entity_resolution_confidence=(claim.metadata or {}).get("entity_resolution_confidence", claim.confidence),
+                conflict_risk=1.0 if forced_conflict else 0.0,
+            )
             row = db.execute(
                 text(
                     """
@@ -647,7 +652,7 @@ def persist_semantic_candidates(
                     "conflict_scope_key": (claim.metadata or {}).get("conflict_scope_key"),
                     "trust_version": TRUST_VERSION,
                     "trust_components": _json(fusion),
-                    "final_trust_score": float(fusion.get("evidence_support_score") or claim.recommend_score or 0.0),
+                    "final_trust_score": float(final_trust_score),
                 },
             ).mappings().first()
             candidate_id = int(row["id"]) if row else None

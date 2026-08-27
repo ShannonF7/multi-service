@@ -67,6 +67,25 @@ def evidence_support_score(
     return round(_clamp(numerator / denominator if denominator else 0.0), 4)
 
 
+def semantic_trust_score(
+    fusion: dict[str, Any],
+    *,
+    entity_resolution_confidence: Any = 0.0,
+    conflict_risk: Any = 0.0,
+) -> float:
+    """Compute the shared claim trust score from explainable components."""
+    entity_score = _clamp(entity_resolution_confidence)
+    risk = _clamp(conflict_risk)
+    score = (
+        0.55 * _clamp(fusion.get("evidence_support_score"))
+        + 0.20 * entity_score
+        + 0.15 * _clamp(fusion.get("source_quality"))
+        + 0.10 * _clamp(fusion.get("cross_source_support"))
+        - 0.10 * risk
+    )
+    return round(_clamp(score), 4)
+
+
 def fuse_evidence(
     bindings: Iterable[dict[str, Any]],
     *,
