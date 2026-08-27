@@ -937,7 +937,8 @@ def list_semantic_candidates(
         source_authority_score, source_weight, provenance_type, retrieval_method, authority_class,
         target_node_id, target_node_candidate_id, entity_resolution_status, possible_nodes,
         raw_type, suggested_type, type_confidence, risk_level, publication_policy, score_components,
-        conflict_key, conflict_group, metadata, created_at, updated_at
+        conflict_key, conflict_group, metadata, canonical_claim_key, conflict_scope_key,
+        trust_version, trust_components, final_trust_score, created_at, updated_at
     """
     with ai_session_scope() as db:
         apply_semantic_candidate_schema(db)
@@ -1049,7 +1050,8 @@ def update_semantic_candidate_status(candidate_id: int, *, status: str, reviewed
                 returning id, candidate_uid, trace_id, source_scenic_id, source_node_id,
                           claim_type, candidate_type, predicate, object_value, object_name,
                           source_url, quote, status, candidate_group_key, value_group_key,
-                          conflict_class, gap_status, conflict_group, metadata, updated_at
+                          conflict_class, gap_status, conflict_group, metadata,
+                          canonical_claim_key, conflict_scope_key, trust_version, trust_components, final_trust_score, updated_at
                 """
             ),
             {"id": int(candidate_id), "status": normalized, "object_value": object_value, "reviewed_by": reviewed_by, "review_note": review_note},
