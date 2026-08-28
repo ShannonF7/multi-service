@@ -7,6 +7,7 @@ from src.rag.service.semantic_candidate_store import (
 )
 
 from .dependencies import refresh_dependency_states, review_node_candidate
+from .audit_service import audit_growth_run
 from .repository import create_run, get_run, record_publication_result, update_publication_sync_status
 from .service import (
     growth_run_state,
@@ -124,6 +125,22 @@ def get_growth_run(growth_run_id: str, compact: bool = False):
         return _compact_growth_detail(detail) if compact else detail
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/{growth_run_id}/audit")
+def get_growth_run_audit(growth_run_id: str, sample_limit: int = 50):
+    """返回 G2.5 只读谱系与一致性审计结果。
+
+    接口只读取自增长数据表，不会修改补全或自增长状态。
+    """
+    try:
+        return audit_growth_run(growth_run_id, sample_limit=sample_limit)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
