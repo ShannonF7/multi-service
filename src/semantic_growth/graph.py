@@ -417,7 +417,12 @@ def validate_conflicts(state: GrowthState) -> dict[str, Any]:
 
 
 def persist_dependencies(state: GrowthState) -> dict[str, Any]:
-    """G5 records candidate dependencies and the affected graph scope."""
+    """记录候选依赖并汇总本批次的 G3/G4 结果。
+
+    输入：包含本批证据、发现摘要和候选 ID 的 GrowthState。
+    输出：依赖结果及可供 GrowthRun 审计使用的批次统计。
+    调用：工作图在冲突校验后调用，不进入旧的语义补全链路。
+    """
     growth_run_id = state["growth_run_id"]
     candidate_ids = state.get("batch_candidate_ids") or []
     result = {}
@@ -450,8 +455,27 @@ def persist_dependencies(state: GrowthState) -> dict[str, Any]:
         "evidence_unit_count": int(discovery.get("evidence_unit_count") or 0),
         "raw_entity_count": int(discovery.get("raw_entity_count") or 0),
         "raw_claim_count": int(discovery.get("raw_claim_count") or 0),
+        "canonical_claim_count": int(discovery.get("canonical_claim_count") or 0),
         "aggregated_count": int(discovery.get("aggregated_count") or 0),
         "existing_fact_binding_count": int(discovery.get("exists_count") or 0),
+        "new_candidate_count": int(discovery.get("new_candidate_count") or len(candidate_ids)),
+        "new_entity_count": int(discovery.get("new_entity_count") or 0),
+        "conflict_count": int(discovery.get("conflict_count") or 0),
+        "low_evidence_count": int(discovery.get("low_evidence_count") or 0),
+        "semantic_match_count": int(discovery.get("semantic_match_count") or 0),
+        "ambiguous_resolution_count": int(discovery.get("ambiguous_resolution_count") or 0),
+        "exact_match_count": int(discovery.get("exact_match_count") or 0),
+        "alias_match_count": int(discovery.get("alias_match_count") or 0),
+        "trust_score_sum": float(discovery.get("trust_score_sum") or 0.0),
+        "trust_scored_count": int(discovery.get("trust_scored_count") or 0),
+        "trust_high_count": int((discovery.get("trust_risk_counts") or {}).get("HIGH") or 0),
+        "trust_medium_count": int((discovery.get("trust_risk_counts") or {}).get("MEDIUM") or 0),
+        "trust_low_count": int((discovery.get("trust_risk_counts") or {}).get("LOW") or 0),
+        "operation_add_count": int((discovery.get("operation_counts") or {}).get("ADD") or 0),
+        "operation_mint_add_count": int((discovery.get("operation_counts") or {}).get("MINT_ADD") or 0),
+        "operation_update_count": int((discovery.get("operation_counts") or {}).get("UPDATE") or 0),
+        "operation_deprecate_count": int((discovery.get("operation_counts") or {}).get("DEPRECATE") or 0),
+        "operation_exists_count": int((discovery.get("operation_counts") or {}).get("EXISTS") or 0),
         "candidate_count": len(candidate_ids),
         "extraction_error_count": sum(1 for item in batch_results if item.get("error")),
         "normalization_updated_count": int(normalization.get("updated_count") or 0),
@@ -721,14 +745,21 @@ def aggregate_results(state: GrowthState) -> dict[str, Any]:
                 for key in (
                     "evidence_count", "image_count", "mention_count", "aligned_count", "candidate_count",
                     "evidence_unit_count", "raw_entity_count", "raw_claim_count", "aggregated_count",
-                    "existing_fact_binding_count",
+                    "canonical_claim_count", "existing_fact_binding_count", "new_candidate_count",
+                    "new_entity_count", "conflict_count", "low_evidence_count",
+                    "operation_add_count", "operation_mint_add_count", "operation_update_count",
+                    "operation_deprecate_count", "operation_exists_count",
+                    "semantic_match_count", "ambiguous_resolution_count", "exact_match_count", "alias_match_count",
+                    "trust_scored_count", "trust_high_count", "trust_medium_count", "trust_low_count",
                     "extraction_error_count", "normalization_updated_count", "vector_recall_count",
                     "vector_query_count", "normalization_error_count", "same_value_conflict_resolved_count",
                     "conflict_validation_error_count", "dependency_count", "affected_scope_count",
                     "dependency_error_count",
                 )
             }
+            totals["trust_score_sum"] = sum(float(item.get("trust_score_sum") or 0.0) for item in batch_summaries)
         else:
+            discovery_summary = state.get("discovery_summary") or {}
             totals = {
                 "evidence_count": len(batch),
                 "image_count": sum(1 for item in batch if str(item.get("asset_type") or "") == "image"),
@@ -744,7 +775,44 @@ def aggregate_results(state: GrowthState) -> dict[str, Any]:
                 "dependency_count": int(dependency_summary.get("dependency_count") or 0),
                 "affected_scope_count": len(dependency_summary.get("affected_scope") or []),
                 "dependency_error_count": len(dependency_summary.get("errors") or []),
+                "evidence_unit_count": int(discovery_summary.get("evidence_unit_count") or 0),
+                "raw_entity_count": int(discovery_summary.get("raw_entity_count") or 0),
+                "raw_claim_count": int(discovery_summary.get("raw_claim_count") or 0),
+                "canonical_claim_count": int(discovery_summary.get("canonical_claim_count") or 0),
+                "aggregated_count": int(discovery_summary.get("aggregated_count") or 0),
+                "existing_fact_binding_count": int(discovery_summary.get("exists_count") or 0),
+                "new_candidate_count": len(candidate_ids),
+                "new_entity_count": int(discovery_summary.get("new_entity_count") or 0),
+                "conflict_count": int(discovery_summary.get("conflict_count") or 0),
+                "low_evidence_count": int(discovery_summary.get("low_evidence_count") or 0),
+                "semantic_match_count": int(discovery_summary.get("semantic_match_count") or 0),
+                "ambiguous_resolution_count": int(discovery_summary.get("ambiguous_resolution_count") or 0),
+                "exact_match_count": int(discovery_summary.get("exact_match_count") or 0),
+                "alias_match_count": int(discovery_summary.get("alias_match_count") or 0),
+                "trust_score_sum": float(discovery_summary.get("trust_score_sum") or 0.0),
+                "trust_scored_count": int(discovery_summary.get("trust_scored_count") or 0),
+                "trust_high_count": int((discovery_summary.get("trust_risk_counts") or {}).get("HIGH") or 0),
+                "trust_medium_count": int((discovery_summary.get("trust_risk_counts") or {}).get("MEDIUM") or 0),
+                "trust_low_count": int((discovery_summary.get("trust_risk_counts") or {}).get("LOW") or 0),
+                "operation_add_count": int((discovery_summary.get("operation_counts") or {}).get("ADD") or 0),
+                "operation_mint_add_count": int((discovery_summary.get("operation_counts") or {}).get("MINT_ADD") or 0),
+                "operation_update_count": int((discovery_summary.get("operation_counts") or {}).get("UPDATE") or 0),
+                "operation_deprecate_count": int((discovery_summary.get("operation_counts") or {}).get("DEPRECATE") or 0),
+                "operation_exists_count": int((discovery_summary.get("operation_counts") or {}).get("EXISTS") or 0),
             }
+        raw_claim_count = int(totals.get("raw_claim_count") or 0)
+        canonical_claim_count = int(totals.get("canonical_claim_count") or 0)
+        aggregated_count = int(totals.get("aggregated_count") or 0)
+        totals["candidate_count"] = len(candidate_ids)
+        totals["persisted_candidate_count"] = len(candidate_ids)
+        totals["new_candidate_count"] = len(candidate_ids)
+        totals["canonicalization_ratio"] = round(canonical_claim_count / raw_claim_count, 4) if raw_claim_count else 0.0
+        totals["aggregation_ratio"] = round(1 - (aggregated_count / canonical_claim_count), 4) if canonical_claim_count else 0.0
+        totals["existing_enrichment_ratio"] = round(int(totals.get("existing_fact_binding_count") or 0) / canonical_claim_count, 4) if canonical_claim_count else 0.0
+        totals["novelty_ratio"] = round((int(totals.get("operation_add_count") or 0) + int(totals.get("operation_mint_add_count") or 0)) / canonical_claim_count, 4) if canonical_claim_count else 0.0
+        totals["evidence_consumed"] = int(totals.get("evidence_unit_count") or 0)
+        totals["existing_binding_count"] = int(totals.get("existing_fact_binding_count") or 0)
+        totals["average_trust_score"] = round(float(totals.get("trust_score_sum") or 0.0) / int(totals.get("trust_scored_count") or 1), 4) if int(totals.get("trust_scored_count") or 0) else 0.0
         extraction_error_count = int(totals["extraction_error_count"])
         if candidate_ids:
             reason = "g2_candidates_ready"
