@@ -75,7 +75,10 @@ def _load_or_build_persisted_index(
     embed_texts: Any,
     np: Any,
 ) -> list[dict[str, Any]]:
-    """Load node vectors from Postgres and lazily upsert missing/stale labels."""
+    """读取或生成节点向量索引。
+
+    输入：领域节点、文本向量函数和 NumPy 模块。输出：带节点标识、类型、父节点和向量的索引列表。由 ``_vector_entity_recall`` 调用；只写入 G3 专用向量表。
+    """
     texts = [_node_index_text(row) for row in rows]
     row_by_id = {str(row.get("source_node_id") or ""): (row, text_value) for row, text_value in zip(rows, texts)}
     hashes = {node_id: _hash(text_value) for node_id, (_, text_value) in row_by_id.items()}
@@ -162,6 +165,10 @@ def _rerank_entity_candidates(
     raw_type: str = "",
     context_node_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    """对 BGE 召回结果进行 Reranker 重排。
+
+    输入：实体提及、候选列表、原始类型和上下文节点。输出：增加重排分数的候选列表。失败时保持原顺序，不直接合并实体。
+    """
     if not candidates or str(os.getenv("G3_RERANKER_ENABLED", "1")).lower() in {"0", "false", "no"}:
         return candidates
     try:
@@ -203,6 +210,10 @@ def _vector_entity_recall(
     context_node_id: str | None = None,
     raw_type: str = "",
 ) -> list[dict[str, Any]]:
+    """用 BGE 召回实体候选，再调用已有 Reranker。
+
+    输入：领域 ID、实体提及、正式节点和 Top-K/上下文参数。输出：节点候选及向量、重排、上下文分数。由 ``_resolve_name`` 调用，结果只参与决策。
+    """
     if not query or not rows:
         return []
     try:
@@ -428,6 +439,8 @@ def _resolve_name(
     context_node_id: str | None = None,
     predicate: str = "",
 ) -> dict[str, Any]:
+    """解析一个实体提及并返回可解释决策。输入为实体名称、类型、证据和节点索引；输出为 EXACT、ALIAS_MATCH、SEMANTIC_MATCH、AMBIGUOUS 或 NEW_ENTITY 及其分数。由聚合函数调用。
+    """
     if _looks_like_non_entity_mention(name, raw_type, predicate):
         return {
             "status": "NON_ENTITY_MENTION",
@@ -535,6 +548,10 @@ def resolve_canonicalize_and_aggregate(
     source_scenic_id: str,
     raw_claims: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """执行 G3 实体、谓词和值归一化并按 canonical claim key 聚合。
+
+    输入为 GrowthRun、领域和原始声明；输出为解析/聚合声明及统计。由开放发现编排器调用。
+    """
     exact, aliases, published_nodes = _node_indexes(source_scenic_id)
     existing_relation_labels: set[str] = set()
     existing_property_labels: set[str] = set()

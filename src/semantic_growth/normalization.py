@@ -278,10 +278,10 @@ def normalize_candidate_batch(
     max_vector_queries: int = 6,
     max_multimodal_queries: int = 3,
 ) -> dict[str, Any]:
-    """Enrich candidates with deterministic normalization and explainable recalls.
+    """补充 G3 召回和 M1 证据信号。
 
-    Vector results are evidence recalls only. This function never changes candidate
-    status, target node ids, or merges entities.
+    输入为领域和候选 ID 预算；输出为更新数量、召回数量和错误。由 graph.normalize_candidates 调用，
+    只更新 metadata，不改审核状态、目标节点或实体合并结果。
     """
     ids = list(dict.fromkeys(int(item) for item in candidate_ids if str(item).isdigit()))
     if not ids:
