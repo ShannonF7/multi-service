@@ -97,3 +97,19 @@ def test_parse_accepts_numpy_boxes():
         "rec_boxes": np.array([[1, 2, 3, 4]]),
     })
     assert result["ocr_blocks"][0]["bbox"] == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_attach_image_context_uses_existing_chunk_only():
+    """图片上下文只透传已有 chunk，缺失时保持空值。"""
+    rows = growth_evidence._attach_image_context([
+        {
+            "asset_type": "image",
+            "metadata": {"doc_id": "doc-1"},
+            "nearby_text": "同页说明",
+            "nearby_section": "建筑介绍",
+        },
+        {"asset_type": "image", "metadata": {}},
+    ])
+    assert rows[0]["metadata"]["nearby_text"] == "同页说明"
+    assert rows[0]["metadata"]["section"] == "建筑介绍"
+    assert "nearby_text" not in rows[1]["metadata"]

@@ -69,6 +69,7 @@ def _compact_evidence_row(row: dict, *, content_limit: int) -> dict:
         "page_no": metadata.get("page_no") or metadata.get("page_number") or row.get("page_no"),
         "caption": metadata.get("caption") or row.get("caption"),
         "nearby_text": metadata.get("nearby_text") or row.get("nearby_text"),
+        "section": metadata.get("section") or row.get("section"),
         "bbox": metadata.get("bbox") or row.get("bbox"),
         "ocr_raw_text": metadata.get("ocr_raw_text") or "",
         "ocr_blocks": metadata.get("ocr_blocks") if isinstance(metadata.get("ocr_blocks"), list) else [],
@@ -113,7 +114,7 @@ def _compact_growth_detail(detail: dict) -> dict:
             for key in (
                 "raw_predicates", "multimodal_evidence", "source_type", "provenance_type",
                 "retrieval_method", "update_operation", "asset_id", "source_doc_id",
-                "chunk_id", "page_no", "caption", "nearby_text", "bbox", "ocr_raw_text",
+                "chunk_id", "page_no", "caption", "nearby_text", "section", "bbox", "ocr_raw_text",
                 "ocr_blocks", "ocr_model",
             )
             if metadata.get(key) is not None

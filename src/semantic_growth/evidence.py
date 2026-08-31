@@ -86,6 +86,28 @@ def _source_family_id(item: dict[str, Any]) -> str:
     })
 
 
+def _attach_image_context(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把同文档图片附近的文本上下文写入内存证据行。
+
+    输入：node_assets 查询结果；输出：带 nearby_text/section 元数据的图片行。
+    上下文仅来自数据库已存在的文档 chunk，不调用模型、不创建新事实。
+    """
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        metadata = dict(item.get("metadata") or {}) if isinstance(item.get("metadata"), dict) else {}
+        if str(item.get("asset_type") or "").lower() == "image":
+            nearby_text = str(item.get("nearby_text") or "").strip()
+            nearby_section = str(item.get("nearby_section") or "").strip()
+            if nearby_text:
+                metadata.setdefault("nearby_text", nearby_text[:4000])
+            if nearby_section:
+                metadata.setdefault("section", nearby_section[:500])
+        item["metadata"] = metadata
+        enriched.append(item)
+    return enriched
+
+
 def _prepare_image_ocr(source_scenic_id: str, image_limit: int) -> None:
     """在领取增长证据前持久化一批缺失 OCR 的图片。
 
@@ -216,6 +238,7 @@ def claim_evidence_batch(
                        a.title as source_title,
                        coalesce(a.url, a.source_url) as source_url,
                        a.caption, a.ocr_text, a.metadata,
+                       nearby.nearby_text, nearby.nearby_section,
                        coalesce(a.content_hash, a.file_hash,
                                 md5(concat_ws('|', a.url, a.caption, a.ocr_text))) as content_hash,
                        a.created_at, 'image' as asset_type, a.id as asset_id,
@@ -226,6 +249,21 @@ def claim_evidence_batch(
                 left join semantic_nodes sn
                   on sn.source_scenic_id = a.source_scenic_id
                  and sn.source_node_id = a.source_node_id
+                left join lateral (
+                    select kc.content as nearby_text,
+                           coalesce(kc.metadata->>'section', kc.metadata->>'heading', kc.title) as nearby_section
+                    from knowledge_chunks kc
+                    where kc.source_scenic_id = a.source_scenic_id
+                      and kc.source_type = 'domain_kb'
+                      and kc.source_id = a.metadata->>'doc_id'
+                      and (
+                          a.metadata->>'page_no' is null
+                          or kc.metadata->>'page_no' = a.metadata->>'page_no'
+                          or kc.metadata->>'chunk_index' = a.metadata->>'page_no'
+                      )
+                    order by kc.id asc
+                    limit 1
+                ) nearby on true
                 left join semantic_growth_evidence_consumptions c
                   on c.source_scenic_id = a.source_scenic_id
                  and c.source_id = ('asset:' || coalesce(nullif(a.source_asset_id, ''), a.id::text))
@@ -297,6 +335,7 @@ def claim_evidence_batch(
                 elif str(row.get("content") or "").strip():
                     enriched_image_rows.append(dict(row))
             image_rows = enriched_image_rows
+        image_rows = _attach_image_context(image_rows)
         # Text is the primary open-discovery channel. Do not let a large old
         # image library crowd uploaded text out of every batch. Duplicate text
         # mirrored in both stores is consumed once per normalized content.
