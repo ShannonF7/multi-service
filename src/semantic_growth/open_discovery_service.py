@@ -15,6 +15,7 @@ from sqlalchemy import text
 from src.core.config import settings
 from src.rag.dependencies import ai_session_scope
 from src.rag.service.claim_type_router import route_claim
+from src.rag.service.source_independence_service import source_independence_key
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +243,17 @@ def materialize_evidence_units(
                 "bound_source_node_id": item.get("source_node_id"),
                 "bound_source_node_name": item.get("source_node_name"),
                 "consumption_id": item.get("consumption_id"),
+                # 来源族用于跨 chunk 聚合；source_id 保留原始文档/资源标识。
+                "document_id": item.get("source_id"),
+                "source_family_id": item.get("source_family_id") or source_independence_key({
+                    "source_type": "image" if str(item.get("asset_type") or "") == "image" else "text",
+                    "asset_type": item.get("asset_type"),
+                    "asset_id": item.get("asset_id"),
+                    "source_id": item.get("source_id"),
+                    "source_doc_id": item.get("source_id"),
+                    "source_url": item.get("source_url") or item.get("image_url"),
+                    "chunk_id": item.get("id") or item.get("chunk_id"),
+                }),
             }
             row = db.execute(
                 text(

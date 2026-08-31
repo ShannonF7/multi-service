@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from src.rag.dependencies import ai_session_scope
 from .ocr_client import extract_ocr_batch
+from src.rag.service.source_independence_service import source_independence_key
 
 CONSUMER_VERSION = "growth-open-v2"
 CHUNK_SCOPE = "__chunk__"
@@ -16,7 +17,13 @@ LEASE_SECONDS = 900
 
 
 def source_cursor_progress(scope_states: list[str]) -> dict[str, Any]:
-    """Return progress where only PROCESSED is successful for cursor advance."""
+    """计算一个证据单元的消费进度。
+
+    输入：同一 source/chunk 下所有 target scope 的消费状态。
+    逻辑：只有 PROCESSED 才算成功；缺失、FAILED、RETRYABLE、CLAIMED
+    都会让游标保持 OPEN，避免 fan-out 分支未完成却被错误跳过。
+    输出：期望分支数、已完成分支数和游标状态。
+    """
     states = [str(state or "").upper() for state in scope_states]
     expected = len(states)
     processed = sum(1 for state in states if state == "PROCESSED")
@@ -25,6 +32,55 @@ def source_cursor_progress(scope_states: list[str]) -> dict[str, Any]:
         "processed_scope_count": processed,
         "cursor_state": "ADVANCED" if expected > 0 and expected == processed else "OPEN",
     }
+
+
+def _ensure_source_cursor(db: Any, identity: dict[str, Any]) -> None:
+    """确保一个 source/chunk 有对应游标记录。
+
+    输入：包含 source_scenic_id、source_id、chunk_id、chunk_hash、
+    consumer_version 的证据身份；输出：无。
+    逻辑：开放式发现和节点对齐共用同一游标表，缺失时幂等创建，
+    从而不会出现“消费记录存在但没有游标可审计”的断链。
+    """
+    db.execute(
+        text(
+            """
+            insert into semantic_growth_source_cursors (
+                source_scenic_id, source_id, chunk_id, chunk_hash, consumer_version
+            ) values (
+                :source_scenic_id, :source_id, :chunk_id, :chunk_hash, :consumer_version
+            ) on conflict (source_scenic_id, source_id, chunk_id, chunk_hash, consumer_version)
+            do nothing
+            """
+        ),
+        {
+            "source_scenic_id": str(identity["source_scenic_id"]),
+            "source_id": str(identity["source_id"]),
+            "chunk_id": int(identity["chunk_id"]),
+            "chunk_hash": str(identity["chunk_hash"]),
+            "consumer_version": str(identity["consumer_version"]),
+        },
+    )
+
+
+def _source_family_id(item: dict[str, Any]) -> str:
+    """计算证据的来源族标识，供 EvidenceUnit 和后续可信度融合复用。
+
+    输入：claim_evidence_batch 返回的证据行；输出：稳定的 document:/image:/web: 标识。
+    同一文档的多个 chunk 共用 document 标识；图片按 asset_id 独立归族。
+    """
+    asset_type = str(item.get("asset_type") or "text").strip().lower()
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    return source_independence_key({
+        "source_type": asset_type,
+        "asset_type": asset_type,
+        "asset_id": item.get("asset_id"),
+        "source_id": item.get("source_id"),
+        "source_doc_id": item.get("source_id") if asset_type != "image" else None,
+        "source_url": item.get("source_url"),
+        "chunk_id": item.get("id") or item.get("chunk_id"),
+        "metadata": metadata,
+    })
 
 
 def claim_evidence_batch(
@@ -234,6 +290,8 @@ def claim_evidence_batch(
             )
         claimed: list[dict[str, Any]] = []
         for row in rows:
+            # 来源族只用于留痕，不改变消费幂等键。
+            source_family_id = _source_family_id(row)
             params = {
                 "growth_run_id": str(growth_run_id),
                 "source_scenic_id": str(row["source_scenic_id"]),
@@ -271,6 +329,7 @@ def claim_evidence_batch(
                 ),
                 params,
             )
+            _ensure_source_cursor(db, params)
             consumption = db.execute(
                 text(
                     """
@@ -283,6 +342,7 @@ def claim_evidence_batch(
                 params,
             ).scalar_one()
             item = dict(row)
+            item["source_family_id"] = source_family_id
             item["consumption_id"] = int(consumption)
             item["lease_owner"] = str(worker_id)
             claimed.append(item)
@@ -535,6 +595,7 @@ def finalize_evidence_batch(
                 "chunk_hash": str(chunk["content_hash"] or ""),
                 "consumer_version": consumer_version,
             }
+            _ensure_source_cursor(db, identity)
             target_rows = db.execute(
                 text(
                     """
@@ -684,6 +745,7 @@ def finalize_open_discovery_batch(
                 "chunk_hash": str(chunk["content_hash"] or ""),
                 "consumer_version": consumer_version,
             }
+            _ensure_source_cursor(db, identity)
             db.execute(
                 text(
                     """
