@@ -92,10 +92,12 @@ def _prepare_image_ocr(source_scenic_id: str, image_limit: int) -> None:
     输入：领域标识和图片批量上限；输出：无。调用已有 image_ocr_service，
     让 OCR 外部调用发生在证据查询事务之前；失败只记录日志，文本证据仍可继续消费。
     """
+    if int(image_limit) <= 0:
+        return
     try:
         process_image_ocr_batch(
             source_scenic_id=str(source_scenic_id),
-            limit=max(1, min(int(image_limit), 16)),
+            limit=min(int(image_limit), 16),
         )
     except Exception as exc:  # pragma: no cover - 依赖数据库和独立 OCR 服务
         logger.warning("growth image OCR preparation skipped: %s", exc)

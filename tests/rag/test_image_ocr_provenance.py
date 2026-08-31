@@ -3,6 +3,7 @@
 from src.rag.schemas import SemanticEvidenceInput
 from src.rag.service import image_ocr_service
 from src.semantic_growth.paddle_ocr_http_service import _bbox, _parse
+from src.semantic_growth import evidence as growth_evidence
 
 
 def test_bbox_normalizes_polygon():
@@ -73,3 +74,15 @@ def test_process_image_ocr_urls_returns_blocks(monkeypatch):
     item = result["items"][0]
     assert item["ocr_raw_text"] == "魁星楼"
     assert item["ocr_blocks"][0]["bbox"] == [1, 2, 3, 4]
+
+
+def test_prepare_image_ocr_respects_zero_limit(monkeypatch):
+    """明确关闭图片批量时不得偷偷识别图片。"""
+    calls = []
+    monkeypatch.setattr(
+        growth_evidence,
+        "process_image_ocr_batch",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    growth_evidence._prepare_image_ocr("4", 0)
+    assert calls == []
