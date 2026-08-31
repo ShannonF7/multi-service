@@ -23,6 +23,28 @@ def _count(db: Any, table: str, where: str, params: dict[str, Any]) -> int:
     return int(row["n"] or 0) if row else 0
 
 
+def _collect_evidence_issues(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """检查证据消费是否悬挂。
+
+    输入：审计 SQL 返回的证据行。输出：可定位到证据单元的问题列表。
+    CLAIMED 且没有抽取声明或绑定表示 worker 未完成，不应被误报为正常无变化。
+    """
+    issues: list[dict[str, Any]] = []
+    for row in evidence_rows:
+        state = str(row.get("consumption_state") or "").upper()
+        evidence_id = int(row["id"])
+        if state == "FAILED":
+            issues.append({"code": "EVIDENCE_CONSUMPTION_FAILED", "evidence_unit_id": evidence_id})
+        if state == "PROCESSED" and row.get("consumption_result") is None:
+            issues.append({"code": "PROCESSED_WITHOUT_RESULT", "evidence_unit_id": evidence_id})
+        if state == "CLAIMED" and not any(
+            int(row.get(key) or 0) > 0
+            for key in ("raw_claim_count", "candidate_binding_count", "fact_binding_count")
+        ):
+            issues.append({"code": "CLAIMED_WITHOUT_RESULT", "evidence_unit_id": evidence_id})
+    return issues
+
+
 def audit_growth_run(growth_run_id: str, *, sample_limit: int = 50) -> dict[str, Any]:
     """生成一个 GrowthRun 的只读谱系与一致性报告。
 
@@ -114,12 +136,7 @@ def audit_growth_run(growth_run_id: str, *, sample_limit: int = 50) -> dict[str,
             issues.append({"code": "CANDIDATE_MISSING_CANONICAL_KEY", "candidate_id": int(row["id"])})
         if int(row.get("evidence_binding_count") or 0) == 0:
             issues.append({"code": "CANDIDATE_MISSING_LINEAGE", "candidate_id": int(row["id"])})
-    for row in evidence_rows:
-        state = str(row.get("consumption_state") or "").upper()
-        if state == "FAILED":
-            issues.append({"code": "EVIDENCE_CONSUMPTION_FAILED", "evidence_unit_id": int(row["id"])})
-        if state == "PROCESSED" and row.get("consumption_result") is None:
-            issues.append({"code": "PROCESSED_WITHOUT_RESULT", "evidence_unit_id": int(row["id"])})
+    issues.extend(_collect_evidence_issues(evidence_rows))
 
     operation_counts = {str(row["operation"]): int(row["n"] or 0) for row in operation_rows}
     canonical_count = sum(1 for row in candidate_rows if str(row.get("canonical_claim_key") or "").strip())
