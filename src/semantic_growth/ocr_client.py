@@ -1,4 +1,8 @@
-"""Fail-open client for the isolated PaddleOCR service."""
+"""调用独立 PaddleOCR 服务的容错客户端。
+
+输入为待识别图片列表，输出按 asset_id 索引的 OCR 结果；服务不可用时返回空字典，
+由调用方决定重试，不阻塞文本证据消费。
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def extract_ocr_batch(items: list[dict[str, Any]], *, timeout: float | None = None) -> dict[int, dict[str, Any]]:
+    """批量调用本地 OCR 服务。
+
+    输入：包含 asset_id/image 的图片列表；输出：按 asset_id 索引的结果字典。
+    网络或服务异常时返回空字典并记录日志，不抛出异常，保证文本增长链可继续。
+    """
     if not items:
         return {}
     endpoint = os.getenv("GROWTH_OCR_URL", "http://127.0.0.1:7011").rstrip("/") + "/extract"

@@ -1,4 +1,9 @@
-"""Persist batched OCR results for synchronized image assets."""
+"""持久化同步图片资源的批量 OCR 结果。
+
+本模块从 node_assets 领取尚未识别的图片，调用独立 PaddleOCR 服务后写回清洗文本、
+原始文本、识别框、置信度和模型版本；增长链只读取这些持久化结果，不在候选层臆造
+图片语义。
+"""
 
 from __future__ import annotations
 
@@ -27,11 +32,11 @@ def process_image_ocr_batch(
     asset_ids: list[str] | None = None,
     limit: int = 16,
 ) -> dict[str, Any]:
-    """OCR assets that do not yet have durable OCR text.
+    """批量识别尚无持久化 OCR 文本的图片资源。
 
-    The select and update are separate transactions deliberately: PaddleOCR is
-    an external process and must not hold an AI_DB transaction open while it
-    downloads and analyses images.
+    输入：领域标识、可选 source_asset_id 列表和批量上限；输出：每个资源的状态、
+    清洗文本、原始文本、框坐标和分数。查询与写回分成两个事务，避免外部 OCR
+    下载/推理期间长期占用 AI_DB 连接；同一资源重复调用保持幂等。
     """
     normalized_ids = [str(value).strip() for value in (asset_ids or []) if str(value).strip()]
     capped_limit = max(1, min(int(limit or 16), 16))
@@ -91,6 +96,8 @@ def process_image_ocr_batch(
                 {
                     "ocr_status": next_status,
                     "ocr_model": str(result.get("model") or "paddleocr")[:128],
+                    "ocr_raw_text": str(result.get("ocr_raw_text") or ""),
+                    "ocr_blocks": result.get("ocr_blocks") if isinstance(result.get("ocr_blocks"), list) else [],
                     "ocr_max_score": float(result.get("max_score") or 0.0),
                     "ocr_mean_score": float(result.get("mean_score") or 0.0),
                     "ocr_min_score": float(result.get("min_score") or 0.0),
@@ -123,6 +130,8 @@ def process_image_ocr_batch(
                     "asset_id": row["source_asset_id"],
                     "status": "OK" if next_status == "SUCCEEDED" else next_status,
                     "ocr_text": ocr_text,
+                    "ocr_raw_text": str(result.get("ocr_raw_text") or ""),
+                    "ocr_blocks": result.get("ocr_blocks") if isinstance(result.get("ocr_blocks"), list) else [],
                     "max_score": float(result.get("max_score") or 0.0),
                     "mean_score": float(result.get("mean_score") or 0.0),
                     "min_score": float(result.get("min_score") or 0.0),
@@ -139,7 +148,11 @@ def process_image_ocr_batch(
 
 
 def process_image_ocr_urls(items: list[dict[str, Any]], *, limit: int = 16) -> dict[str, Any]:
-    """OCR image URLs that are not yet bound to a B-side node asset."""
+    """识别尚未绑定 B 端 node_assets 的图片 URL。
+
+    输入：包含 asset_id/image 的 URL 列表和批量上限；输出：不写数据库的临时 OCR
+    结果，供上传预览等调用方使用；服务异常按单项返回 ERROR。
+    """
     batch = [
         {"asset_id": item.get("asset_id"), "image": item.get("image")}
         for item in items
@@ -160,6 +173,8 @@ def process_image_ocr_urls(items: list[dict[str, Any]], *, limit: int = 16) -> d
                 "asset_id": item["asset_id"],
                 "status": status,
                 "ocr_text": ocr_text,
+                "ocr_raw_text": str(result.get("ocr_raw_text") or ""),
+                "ocr_blocks": result.get("ocr_blocks") if isinstance(result.get("ocr_blocks"), list) else [],
                 "max_score": float(result.get("max_score") or 0.0),
                 "mean_score": float(result.get("mean_score") or 0.0),
                 "min_score": float(result.get("min_score") or 0.0),

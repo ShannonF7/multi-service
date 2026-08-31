@@ -185,6 +185,11 @@ class SemanticRelationContext(FlexibleModel):
 
 
 class SemanticEvidenceInput(FlexibleModel):
+    """补全与自增长共用的证据输入契约。
+
+    输入：文本或图片证据及其定位信息；输出：传递给语义抽取服务的单条证据。
+    图片证据额外保留页码、框坐标、标题、邻近文本和 OCR 块，不改变旧补全字段。
+    """
     title: Optional[str] = None
     content: Optional[str] = None
     source: Optional[str] = None
@@ -192,6 +197,16 @@ class SemanticEvidenceInput(FlexibleModel):
     source_url: Optional[str] = None
     quote: Optional[str] = None
     score: Optional[float] = 0.0
+    source_doc_id: Optional[str] = None
+    chunk_id: Optional[int] = None
+    page_no: Optional[int] = None
+    asset_id: Optional[int] = None
+    image: Optional[str] = None
+    caption: Optional[str] = None
+    nearby_text: Optional[str] = None
+    bbox: Optional[Any] = None
+    ocr_blocks: List[Dict[str, Any]] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SemanticCompleteRequest(FlexibleModel):

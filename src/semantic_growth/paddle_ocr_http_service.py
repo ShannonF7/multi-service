@@ -1,4 +1,8 @@
-"""Loopback OCR adapter using the existing paddle_ocr environment."""
+"""调用独立 PaddleOCR 环境的本地 HTTP 适配器。
+
+输入为图片 URL 或本地路径列表，输出保留原始 OCR 文本、过滤后的文本、
+识别框坐标、行置信度和模型版本。该服务只负责识别，不写业务数据库。
+"""
 
 from __future__ import annotations
 
@@ -83,27 +87,68 @@ def _download(value: str, asset_id: Any) -> Path:
         raise
 
 
+def _bbox(value: Any) -> list[float] | None:
+    """把 PaddleOCR 的四点框或四值框归一化为 [x1,y1,x2,y2]。"""
+    try:
+        points = value.tolist() if hasattr(value, "tolist") else value
+        if isinstance(points, (list, tuple)) and len(points) == 4:
+            if all(isinstance(item, (int, float)) for item in points):
+                return [float(item) for item in points]
+            flat = [
+                float(coord)
+                for point in points
+                if isinstance(point, (list, tuple)) and len(point) >= 2
+                for coord in point[:2]
+            ]
+            if len(flat) >= 4:
+                return [min(flat[0::2]), min(flat[1::2]), max(flat[0::2]), max(flat[1::2])]
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 def _parse(result: Any) -> dict[str, Any]:
+    """解析 PaddleOCR 输出并保留可追溯的文本框信息。
+
+    输入：PaddleOCR predict 的单页结果；输出：原始/清洗文本、分数、
+    ocr_blocks 框列表和模型版本。低于阈值的行不会进入清洗文本和候选抽取，
+    但会保留在 ocr_raw_text 以便后续人工复核。
+    """
     page = result[0] if isinstance(result, list) and result else result
     if not isinstance(page, dict):
-        return {"ocr_text": "", "max_score": 0.0, "status": "no_text"}
+        return {"ocr_text": "", "ocr_raw_text": "", "ocr_blocks": [], "max_score": 0.0, "status": "no_text", "model": "paddleocr"}
     texts = list(page.get("rec_texts") or [])
     scores = list(page.get("rec_scores") or [])
-    kept = []
-    kept_scores = []
+    boxes = list(page.get("rec_boxes") or page.get("dt_polys") or page.get("rec_polys") or [])
+    raw_texts: list[str] = []
+    kept: list[str] = []
+    kept_scores: list[float] = []
+    blocks: list[dict[str, Any]] = []
     for index, value in enumerate(texts):
-        value = str(value or "").strip()
+        text_value = str(value or "").strip()
+        if not text_value:
+            continue
+        raw_texts.append(text_value)
         score = float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0
-        if value and score >= MIN_SCORE:
-            kept.append(value)
+        if score >= MIN_SCORE:
+            kept.append(text_value)
             kept_scores.append(score)
+            blocks.append({
+                "text": text_value,
+                "score": score,
+                "bbox": _bbox(boxes[index]) if index < len(boxes) else None,
+                "order": len(blocks),
+            })
     return {
         "ocr_text": "\n".join(kept),
+        "ocr_raw_text": "\n".join(raw_texts),
+        "ocr_blocks": blocks,
         "max_score": max((float(item or 0) for item in scores), default=0.0),
         "mean_score": (sum(kept_scores) / len(kept_scores)) if kept_scores else 0.0,
         "min_score": min(kept_scores, default=0.0),
         "line_count": len(kept),
         "status": "ok" if kept else "no_text",
+        "model": os.getenv("OCR_MODEL_VERSION", "paddleocr"),
     }
 
 

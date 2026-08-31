@@ -113,7 +113,15 @@ def build_growth_payload(
         is_image_asset = str(chunk.get("asset_type") or "") == "image"
         source_type = "image_asset" if is_image_asset else "domain_kb"
         source_types.add(source_type)
-        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        metadata = dict(chunk.get("metadata") or {}) if isinstance(chunk.get("metadata"), dict) else {}
+        if is_image_asset:
+            # 图片证据的定位和 OCR 结果只从 node_assets 元数据透传，不能由抽取模型补造。
+            metadata.setdefault("asset_id", chunk.get("asset_id"))
+            metadata.setdefault("source_doc_id", chunk.get("source_id"))
+            metadata.setdefault("page_no", metadata.get("page_no") or metadata.get("page_number"))
+            metadata.setdefault("caption", chunk.get("caption"))
+            metadata.setdefault("nearby_text", metadata.get("nearby_text") or metadata.get("near_text") or "")
+            metadata.setdefault("bbox", metadata.get("bbox"))
         if is_image_asset:
             raw_score = (
                 chunk.get("ocr_mean_score")
@@ -139,8 +147,14 @@ def build_growth_payload(
                 score=evidence_score,
                 source_doc_id=str(chunk.get("source_id") or "") or None,
                 chunk_id=int(chunk["id"]) if chunk.get("id") is not None else None,
+                page_no=int(metadata["page_no"]) if str(metadata.get("page_no") or "").isdigit() else None,
                 image=str(chunk.get("image_url") or "") or None,
                 asset_id=int(chunk["asset_id"]) if chunk.get("asset_id") is not None else None,
+                caption=str(chunk.get("caption") or metadata.get("caption") or "") or None,
+                nearby_text=str(metadata.get("nearby_text") or "") or None,
+                bbox=metadata.get("bbox"),
+                ocr_blocks=metadata.get("ocr_blocks") if isinstance(metadata.get("ocr_blocks"), list) else [],
+                metadata=metadata,
             )
         )
     existing_properties, existing_relations = _published_context(

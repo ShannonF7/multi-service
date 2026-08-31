@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 import os
 import re
 from typing import Any
@@ -9,11 +10,13 @@ from sqlalchemy import text
 
 from src.rag.dependencies import ai_session_scope
 from .ocr_client import extract_ocr_batch
+from src.rag.service.image_ocr_service import process_image_ocr_batch
 from src.rag.service.source_independence_service import source_independence_key
 
 CONSUMER_VERSION = "growth-open-v2"
 CHUNK_SCOPE = "__chunk__"
 LEASE_SECONDS = 900
+logger = logging.getLogger(__name__)
 
 
 def source_cursor_progress(scope_states: list[str]) -> dict[str, Any]:
@@ -83,6 +86,21 @@ def _source_family_id(item: dict[str, Any]) -> str:
     })
 
 
+def _prepare_image_ocr(source_scenic_id: str, image_limit: int) -> None:
+    """在领取增长证据前持久化一批缺失 OCR 的图片。
+
+    输入：领域标识和图片批量上限；输出：无。调用已有 image_ocr_service，
+    让 OCR 外部调用发生在证据查询事务之前；失败只记录日志，文本证据仍可继续消费。
+    """
+    try:
+        process_image_ocr_batch(
+            source_scenic_id=str(source_scenic_id),
+            limit=max(1, min(int(image_limit), 16)),
+        )
+    except Exception as exc:  # pragma: no cover - 依赖数据库和独立 OCR 服务
+        logger.warning("growth image OCR preparation skipped: %s", exc)
+
+
 def claim_evidence_batch(
     *,
     growth_run_id: str,
@@ -94,6 +112,12 @@ def claim_evidence_batch(
 ) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
     lease_expires = now + timedelta(seconds=LEASE_SECONDS)
+    requested_image_limit = (
+        int(os.getenv("GROWTH_IMAGE_BATCH_LIMIT", "16"))
+        if image_limit is None
+        else int(image_limit)
+    )
+    _prepare_image_ocr(str(source_scenic_id), requested_image_limit)
     with ai_session_scope() as db:
         text_rows = db.execute(
             text(
@@ -178,11 +202,6 @@ def claim_evidence_batch(
                 "limit": max(1, min(int(limit), 200)),
             },
         ).mappings().all()
-        requested_image_limit = (
-            int(os.getenv("GROWTH_IMAGE_BATCH_LIMIT", "16"))
-            if image_limit is None
-            else int(image_limit)
-        )
         image_rows = db.execute(
             text(
                 """
@@ -260,6 +279,18 @@ def claim_evidence_batch(
                     enriched["ocr_mean_score"] = float(ocr.get("mean_score") or 0.0)
                     enriched["ocr_min_score"] = float(ocr.get("min_score") or 0.0)
                     enriched["ocr_line_count"] = int(ocr.get("line_count") or 0)
+                    enriched_metadata = dict(enriched.get("metadata") or {}) if isinstance(enriched.get("metadata"), dict) else {}
+                    enriched_metadata.update({
+                        "ocr_status": "SUCCEEDED",
+                        "ocr_model": str(ocr.get("model") or "paddleocr")[:128],
+                        "ocr_raw_text": str(ocr.get("ocr_raw_text") or ""),
+                        "ocr_blocks": ocr.get("ocr_blocks") if isinstance(ocr.get("ocr_blocks"), list) else [],
+                        "ocr_max_score": enriched["ocr_max_score"],
+                        "ocr_mean_score": enriched["ocr_mean_score"],
+                        "ocr_min_score": enriched["ocr_min_score"],
+                        "ocr_line_count": enriched["ocr_line_count"],
+                    })
+                    enriched["metadata"] = enriched_metadata
                     enriched_image_rows.append(enriched)
                 elif str(row.get("content") or "").strip():
                     enriched_image_rows.append(dict(row))
