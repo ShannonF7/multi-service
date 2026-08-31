@@ -1,3 +1,12 @@
+"""候选实体解析、归一化与聚合服务。
+
+文件用途：将开放发现得到的实体提及与正式图谱节点对齐，并生成可审计的统一候选。
+输入：GrowthRun 原始声明、领域节点及其属性/别名。
+输出：实体解析结果、CanonicalClaim 聚合结果和 KG Delta 所需的判定信息。
+逻辑：先精确/别名匹配，再用 BGE 向量召回和跨模态 Reranker 排序；向量只负责召回，
+最终仍由分数间隔、类型与上下文规则决定是否合并，避免相似度直接制造错误节点。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -28,6 +37,7 @@ _VECTOR_MIN_MARGIN = 0.08
 
 
 def _normalized_node_type(value: Any) -> str:
+    """规范化节点类型用于匹配。输入可为中文名称、英文编码或 code=label；输出稳定的比较键。"""
     raw = unicodedata.normalize("NFKC", str(value or "")).casefold().strip()
     if "=" in raw:
         code, _label = raw.split("=", 1)
@@ -45,23 +55,35 @@ def _normalized_node_type(value: Any) -> str:
     return aliases.get(raw, raw)
 
 
-def _type_compatible(raw_type: Any, candidate_type: Any) -> bool:
+def _type_compatible(raw_type: Any, candidate_type: Any, candidate_label: Any = None) -> bool:
+    """判断抽取类型与正式节点类型是否兼容。
+
+    B 端节点保存的是管理员生成的编码（如 type_xxx），而模型可能返回中文标签；
+    candidate_label 由领域 schema 注册表提供，只有编码与标签确实对应时才放行。
+    """
     raw = _normalized_node_type(raw_type)
     candidate = _normalized_node_type(candidate_type)
-    return not raw or not candidate or raw == candidate
+    label = _normalized_node_type(candidate_label)
+    return not raw or not candidate or raw == candidate or (label and raw == label)
 
 
 ALIAS_KEYS = {"alias", "aliases", "别名", "曾用名", "简称", "又名", "英文名"}
 
 
 def _node_index_text(row: dict[str, Any]) -> str:
+    """拼接节点向量索引文本。输入为节点行；输出包含名称、别名、类型和截断描述的中文文本。"""
     properties = row.get("properties") if isinstance(row.get("properties"), dict) else {}
     alias_values: list[str] = []
     for key, value in properties.items():
         key_text = str(key or "").casefold()
         if key_text in ALIAS_KEYS or any(token in key_text for token in ("alias", "鍒悕", "鏇剧敤", "绠€绉?")):
             alias_values.extend(_values(value))
-    parts = [str(row.get("node_name") or ""), *alias_values, str(row.get("node_type") or "")]
+    parts = [
+        str(row.get("node_name") or ""),
+        *alias_values,
+        str(row.get("node_type") or ""),
+        str(row.get("node_type_label") or ""),
+    ]
     description = str(row.get("description") or "").strip()
     if description:
         parts.append(description[:240])
@@ -151,6 +173,7 @@ def _load_or_build_persisted_index(
             "node_id": node_id,
             "name": row.get("node_name"),
             "node_type": row.get("node_type"),
+            "node_type_label": row.get("node_type_label"),
             "parent_node_id": str(row.get("parent_source_node_id") or ""),
             "text": label_text,
             "vector": entry["vector"],
@@ -201,6 +224,46 @@ def _rerank_entity_candidates(
         return candidates
 
 
+def _merge_entity_recall_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    '''合并文本和图片召回候选并按节点去重。
+
+    输入：来自不同召回通道的节点候选；输出：按节点 ID 去重后的候选。
+    同一节点保留更高分，并记录所有召回方式，供审计页面解释候选来源。
+    '''
+    merged: dict[str, dict[str, Any]] = {}
+    for item in candidates:
+        node_id = str(item.get("node_id") or "").strip()
+        if not node_id:
+            continue
+        current = merged.get(node_id)
+        if current is None:
+            merged[node_id] = dict(item)
+            continue
+        current_score = float(current.get("final_score") or current.get("score") or 0.0)
+        item_score = float(item.get("final_score") or item.get("score") or 0.0)
+        methods = list(dict.fromkeys([
+            *(current.get("recall_methods") or [current.get("recall_method") or "TEXT_VECTOR_RECALL"]),
+            *(item.get("recall_methods") or [item.get("recall_method") or "TEXT_VECTOR_RECALL"]),
+        ]))
+        if item_score > current_score:
+            replacement = dict(item)
+            replacement["recall_methods"] = methods
+            merged[node_id] = replacement
+        else:
+            current["recall_methods"] = methods
+            if item.get("image_vector_score") is not None:
+                current["image_vector_score"] = item["image_vector_score"]
+                current["image_vector_distance"] = item.get("image_vector_distance")
+                current["image_source_asset_id"] = item.get("image_source_asset_id")
+    result = list(merged.values())
+    result.sort(key=lambda item: float(item.get("final_score") or item.get("score") or 0.0), reverse=True)
+    return result[: max(1, int(limit))]
+
+
 def _vector_entity_recall(
     source_scenic_id: str,
     query: str,
@@ -209,8 +272,9 @@ def _vector_entity_recall(
     limit: int = 5,
     context_node_id: str | None = None,
     raw_type: str = "",
+    image_asset_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """用 BGE 召回实体候选，再调用已有 Reranker。
+    """用文本向量和可用的图片向量召回实体候选，再调用已有 Reranker。
 
     输入：领域 ID、实体提及、正式节点和 Top-K/上下文参数。输出：节点候选及向量、重排、上下文分数。由 ``_resolve_name`` 调用，结果只参与决策。
     """
@@ -248,24 +312,47 @@ def _vector_entity_recall(
                 "final_score": round(score + context_bonus, 6),
             })
         scored.sort(key=lambda item: item["final_score"], reverse=True)
+        for item in scored:
+            item["recall_method"] = "TEXT_VECTOR_RECALL"
+            item["recall_methods"] = ["TEXT_VECTOR_RECALL"]
+        recall_candidates = list(scored)
+        if image_asset_id is not None:
+            try:
+                from src.rag.service.image_embedding_service import recall_image_asset_nodes
+
+                recall_candidates.extend(
+                    recall_image_asset_nodes(
+                        source_scenic_id,
+                        int(image_asset_id),
+                        limit=max(1, int(limit)),
+                    )
+                )
+            except Exception as exc:
+                logger.info("image vector entity recall skipped: %s", exc)
+        combined = _merge_entity_recall_candidates(
+            recall_candidates,
+            limit=max(1, int(limit) * 2),
+        )
         reranked = _rerank_entity_candidates(
             query,
-            scored[: max(1, int(limit))],
+            combined,
             raw_type=raw_type,
             context_node_id=context_node_id,
         )
-        return reranked
+        return reranked[: max(1, int(limit))]
     except Exception as exc:
         logger.warning("G3 entity vector recall skipped for %s: %s", source_scenic_id, exc)
         return []
 
 
 def _hash(value: Any) -> str:
+    """计算稳定 SHA-256。输入任意可 JSON 序列化值；输出用于索引内容校验和候选身份的十六进制哈希。"""
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _looks_like_non_entity_mention(mention: Any, raw_type: Any = "", predicate: Any = "") -> bool:
+    """识别句子或命题而非实体名称。输入实体提及及上下文；输出 True 表示应分流，避免把完整句子建成节点。"""
     text = unicodedata.normalize("NFKC", str(mention or "")).strip()
     if not text:
         return True
@@ -276,11 +363,13 @@ def _looks_like_non_entity_mention(mention: Any, raw_type: Any = "", predicate: 
 
 
 def normalize_entity_name(value: Any) -> str:
+    """生成实体名称比较键。输入原始名称；输出去空白、大小写和标点差异后的稳定键。"""
     value = unicodedata.normalize("NFKC", str(value or "")).casefold().strip()
     return "".join(char for char in value if char.isalnum())
 
 
 def normalize_discovered_predicate(value: Any) -> str:
+    """规范化开放发现谓词。输入证据中的原始谓词；输出统一谓词编码，供事实身份和冲突策略使用。"""
     raw = unicodedata.normalize("NFKC", str(value or "")).strip()
     raw = re.sub(r"^(?:于)?\d{2,4}年(?:同年)?", "", raw).strip()
     raw = re.sub(r"^(?:同年|随后|之后|当时)", "", raw).strip()
@@ -310,6 +399,7 @@ def normalize_discovered_predicate(value: Any) -> str:
 
 
 def _values(value: Any) -> list[str]:
+    """把属性值拆成可比较的字符串列表。输入支持标量、列表和 value/values 字典；输出去空白后的值列表。"""
     if isinstance(value, dict):
         value = value.get("value") or value.get("values") or value.get("display_value")
     if isinstance(value, (list, tuple, set)):
@@ -321,6 +411,7 @@ def _values(value: Any) -> list[str]:
 
 
 def _node_indexes(source_scenic_id: str) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """加载领域节点并建立精确名、别名和正式节点索引。输入领域 ID；输出三个索引，供实体解析复用。"""
     with ai_session_scope() as db:
         rows = [
             dict(row)
@@ -334,6 +425,19 @@ def _node_indexes(source_scenic_id: str) -> tuple[dict[str, list[dict[str, Any]]
                 {"sid": str(source_scenic_id)},
             ).mappings().all()
         ]
+        # 类型标签来自独立注册表，不从节点名称猜测，注册表不存在时保持兼容。
+        try:
+            labels = {
+                str(item["type_code"]): str(item["type_label"])
+                for item in db.execute(
+                    text("select type_code, type_label from semantic_domain_type_registry where source_scenic_id=:sid"),
+                    {"sid": str(source_scenic_id)},
+                ).mappings().all()
+            }
+        except Exception:
+            labels = {}
+        for row in rows:
+            row["node_type_label"] = labels.get(str(row.get("node_type") or ""))
     exact: dict[str, list[dict[str, Any]]] = defaultdict(list)
     aliases: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -438,6 +542,7 @@ def _resolve_name(
     published_nodes: list[dict[str, Any]],
     context_node_id: str | None = None,
     predicate: str = "",
+    image_asset_id: int | None = None,
 ) -> dict[str, Any]:
     """解析一个实体提及并返回可解释决策。输入为实体名称、类型、证据和节点索引；输出为 EXACT、ALIAS_MATCH、SEMANTIC_MATCH、AMBIGUOUS 或 NEW_ENTITY 及其分数。由聚合函数调用。
     """
@@ -476,7 +581,7 @@ def _resolve_name(
             "node_candidate_id": None,
             "node_type": raw_type or "",
             "possible_nodes": [
-                {"node_id": str(row.get("source_node_id") or ""), "name": row.get("node_name"), "node_type": row.get("node_type")}
+                {"node_id": str(row.get("source_node_id") or ""), "name": row.get("node_name"), "node_type": row.get("node_type"), "node_type_label": row.get("node_type_label")}
                 for row in rows
             ],
             "resolution_method": "DETERMINISTIC_AMBIGUOUS",
@@ -485,8 +590,15 @@ def _resolve_name(
             "vector_margin": None,
         }
     vector_candidates = [
-        item for item in _vector_entity_recall(source_scenic_id, name, published_nodes, context_node_id=context_node_id, raw_type=str(raw_type or ""))
-        if _type_compatible(raw_type, item.get("node_type"))
+        item for item in _vector_entity_recall(
+            source_scenic_id,
+            name,
+            published_nodes,
+            context_node_id=context_node_id,
+            raw_type=str(raw_type or ""),
+            image_asset_id=image_asset_id,
+        )
+        if _type_compatible(raw_type, item.get("node_type"), item.get("node_type_label"))
     ]
     top1 = vector_candidates[0] if vector_candidates else None
     top2 = vector_candidates[1] if len(vector_candidates) > 1 else None
@@ -494,14 +606,31 @@ def _resolve_name(
     top2_score = float((top2 or {}).get("rank_score") or (top2 or {}).get("final_score") or 0.0)
     margin = top1_score - top2_score
     vector_projection = [
-        {"node_id": item.get("node_id"), "name": item.get("name"), "node_type": item.get("node_type"), "score": item.get("rank_score") or item.get("final_score"), "vector_score": item.get("score"), "reranker_score": item.get("reranker_score")}
+        {
+            "node_id": item.get("node_id"),
+            "name": item.get("name"),
+            "node_type": item.get("node_type"),
+            "node_type_label": item.get("node_type_label"),
+            "score": item.get("rank_score") or item.get("final_score"),
+            "vector_score": item.get("score"),
+            "reranker_score": item.get("reranker_score"),
+            "recall_methods": item.get("recall_methods") or [item.get("recall_method")],
+            "image_vector_score": item.get("image_vector_score"),
+            "image_vector_distance": item.get("image_vector_distance"),
+            "image_source_asset_id": item.get("image_source_asset_id"),
+        }
         for item in vector_candidates
     ]
+    image_recall_count = sum(
+        1 for item in vector_candidates
+        if "IMAGE_VECTOR_RECALL" in (item.get("recall_methods") or [item.get("recall_method")])
+    )
     resolution_metadata = {
-        "resolution_method": "VECTOR_RECALL",
+        "resolution_method": "TEXT_AND_IMAGE_VECTOR_RECALL" if image_recall_count else "VECTOR_RECALL",
         "vector_top1_score": round(top1_score, 6),
         "vector_top2_score": round(top2_score, 6),
         "vector_margin": round(margin, 6),
+        "image_vector_recall_count": image_recall_count,
         "vector_candidates": vector_projection,
     }
     if top1 and top1_score >= _VECTOR_MIN_SCORE and margin >= _VECTOR_MIN_MARGIN:
@@ -592,6 +721,12 @@ def resolve_canonicalize_and_aggregate(
                 continue
             unit = claim["evidence_unit"]
             evidence_unit_id = int(unit["id"])
+            unit_metadata = unit.get("metadata") if isinstance(unit.get("metadata"), dict) else {}
+            image_asset_id = unit_metadata.get("asset_id") if str(unit.get("source_type") or "").lower() == "image" else None
+            try:
+                image_asset_id = int(image_asset_id) if image_asset_id is not None else None
+            except (TypeError, ValueError):
+                image_asset_id = None
             subject = _resolve_name(
                 db,
                 name=claim["subject_text"],
@@ -604,6 +739,7 @@ def resolve_canonicalize_and_aggregate(
                 aliases=aliases,
                 published_nodes=published_nodes,
                 predicate=claim.get("raw_predicate") or "",
+                image_asset_id=image_asset_id,
             )
             predicate = normalize_discovered_predicate(claim["raw_predicate"])
             if str(subject.get("status") or "") == "NON_ENTITY_MENTION":
@@ -632,6 +768,7 @@ def resolve_canonicalize_and_aggregate(
                     published_nodes=published_nodes,
                     context_node_id=subject.get("node_id"),
                     predicate=claim.get("raw_predicate") or "",
+                    image_asset_id=image_asset_id,
                 )
             if target and str(target.get("status") or "") == "NON_ENTITY_MENTION":
                 resolution_counts["NON_ENTITY_MENTION"] = resolution_counts.get("NON_ENTITY_MENTION", 0) + 1

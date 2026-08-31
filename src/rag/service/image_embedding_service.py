@@ -225,6 +225,87 @@ def _search_domain_kb_image_vectors(source_scenic_id: str, vector: list[float], 
     return results
 
 
+def recall_image_asset_nodes(
+    source_scenic_id: str,
+    asset_id: int,
+    *,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """用图片向量召回同领域的已有节点候选。
+
+    输入：领域 ID、当前图片 asset_id 和候选数量；输出：按图片向量距离排序的
+    节点候选。该函数只做召回，不修改数据库，也不决定实体是否相同；调用方仍需
+    结合名称、类型、文本向量、重排和上下文阈值完成最终解析。没有对应向量时返回空列表。
+    """
+    if not str(source_scenic_id or "").strip() or int(asset_id or 0) <= 0:
+        return []
+    with ai_session_scope() as db:
+        rows = db.execute(
+            text(
+                """
+                with query_embedding as (
+                    select embedding
+                    from domain_kb_image_embeddings
+                    where source_scenic_id=:sid
+                      and asset_id=:asset_id
+                      and model_name=:model_name
+                    limit 1
+                ),
+                nearest_nodes as (
+                    select de.source_node_id,
+                           min(de.embedding <-> q.embedding) as distance,
+                           min(de.asset_id) as source_asset_id
+                    from domain_kb_image_embeddings de
+                    cross join query_embedding q
+                    where de.source_scenic_id=:sid
+                      and de.model_name=:model_name
+                      and de.asset_id <> :asset_id
+                      and coalesce(de.source_node_id, '') not in ('', '__domain__')
+                    group by de.source_node_id
+                )
+                select nn.source_node_id, sn.node_name, sn.node_type,
+                       sn.parent_source_node_id, sdr.type_label,
+                       nn.source_asset_id, nn.distance
+                from nearest_nodes nn
+                join semantic_nodes sn
+                  on sn.source_scenic_id=:sid
+                 and sn.source_node_id=nn.source_node_id
+                left join semantic_domain_type_registry sdr
+                  on sdr.source_scenic_id=:sid
+                 and sdr.type_code=sn.node_type
+                order by nn.distance asc
+                limit :limit
+                """
+            ),
+            {
+                "sid": str(source_scenic_id),
+                "asset_id": int(asset_id),
+                "model_name": MODEL_NAME,
+                "limit": max(1, min(int(limit), 20)),
+            },
+        ).mappings().all()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        distance = float(row.get("distance") or 0.0)
+        result.append(
+            {
+                "node_id": str(row.get("source_node_id") or ""),
+                "name": row.get("node_name") or "",
+                "node_type": row.get("node_type") or "",
+                "node_type_label": row.get("type_label") or "",
+                "parent_node_id": str(row.get("parent_source_node_id") or ""),
+                "text": row.get("node_name") or "",
+                "score": round(max(0.0, 1.0 - distance / 2.0), 6),
+                "final_score": round(max(0.0, 1.0 - distance / 2.0), 6),
+                "image_vector_distance": round(distance, 6),
+                "image_vector_score": round(max(0.0, 1.0 - distance / 2.0), 6),
+                "image_source_asset_id": int(row["source_asset_id"]) if row.get("source_asset_id") is not None else None,
+                "recall_method": "IMAGE_VECTOR_RECALL",
+            }
+        )
+    return result
+
+
 def embed_scenic_images(
     source_scenic_id: str,
     *,
