@@ -47,8 +47,43 @@ def create_growth_run(payload: dict = Body(default={}), background_tasks: Backgr
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+def _compact_evidence_row(row: dict, *, content_limit: int) -> dict:
+    """把证据绑定投影为 A 端可展示的定位信息。
+
+    输入：候选或 GrowthRun 返回的一条证据绑定；输出：文本/图片统一结构，
+    保留 asset_id、原图地址、文档页码、OCR 框、标题和邻近文本。该函数只读，
+    不改变证据或候选状态。
+    """
+    metadata = row.get("evidence_metadata") if isinstance(row.get("evidence_metadata"), dict) else {}
+    source_type = str(row.get("source_type") or "").lower()
+    is_image = source_type in {"image", "image_asset"}
+    source_url = str(row.get("source_url") or "") if is_image else ""
+    return {
+        "asset_id": metadata.get("asset_id") or row.get("asset_id"),
+        "source_type": str(row.get("source_type") or ""),
+        "source_title": str(row.get("source_title") or ""),
+        "source_url": source_url,
+        "image_url": source_url,
+        "source_doc_id": metadata.get("source_doc_id") or row.get("source_doc_id"),
+        "chunk_id": metadata.get("chunk_id") or row.get("chunk_id"),
+        "page_no": metadata.get("page_no") or metadata.get("page_number") or row.get("page_no"),
+        "caption": metadata.get("caption") or row.get("caption"),
+        "nearby_text": metadata.get("nearby_text") or row.get("nearby_text"),
+        "bbox": metadata.get("bbox") or row.get("bbox"),
+        "ocr_raw_text": metadata.get("ocr_raw_text") or "",
+        "ocr_blocks": metadata.get("ocr_blocks") if isinstance(metadata.get("ocr_blocks"), list) else [],
+        "ocr_model": metadata.get("ocr_model"),
+        "evidence_score": row.get("evidence_score"),
+        "evidence_content": str(row.get("evidence_content") or "")[:content_limit],
+    }
+
+
 def _compact_growth_detail(detail: dict) -> dict:
-    """Return the review-page projection without repeated raw lineage blobs."""
+    """返回 GrowthRun 详情的紧凑投影，供 A 端审核页使用。
+
+    输入：GrowthRun 完整详情；输出：只保留本轮候选、证据定位和谱系摘要的字典。
+    候选分类由后端投影器统一决定，原始长谱系仍通过只读 audit 接口按需查看。
+    """
     compact = dict(detail)
     compact_candidates = []
     for candidate in detail.get("candidates") or []:
@@ -75,26 +110,19 @@ def _compact_growth_detail(detail: dict) -> dict:
         metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
         item["metadata"] = {
             key: metadata.get(key)
-            for key in ("raw_predicates", "multimodal_evidence", "source_type", "provenance_type", "retrieval_method", "update_operation")
+            for key in (
+                "raw_predicates", "multimodal_evidence", "source_type", "provenance_type",
+                "retrieval_method", "update_operation", "asset_id", "source_doc_id",
+                "chunk_id", "page_no", "caption", "nearby_text", "bbox", "ocr_raw_text",
+                "ocr_blocks", "ocr_model",
+            )
             if metadata.get(key) is not None
         }
-        # candidate is the full repository row; item is only the compact
-        # projection. Read evidence from candidate, otherwise image bindings
-        # disappear before A端 can render the original image.
         raw_growth_evidence = candidate.get("growth_evidence") or []
         item["growth_evidence"] = [
-            {
-                "asset_id": (row.get("evidence_metadata") or {}).get("asset_id") if isinstance(row.get("evidence_metadata"), dict) else None,
-                "source_type": str(row.get("source_type") or ""),
-                "source_title": str(row.get("source_title") or ""),
-                "source_url": str(row.get("source_url") or "") if str(row.get("source_type") or "").lower() == "image" else "",
-                "image_url": str(row.get("source_url") or "") if str(row.get("source_type") or "").lower() == "image" else "",
-                "evidence_score": row.get("evidence_score"),
-                "evidence_content": str(row.get("evidence_content") or "")[:400],
-            }
+            _compact_evidence_row(row, content_limit=400)
             for row in raw_growth_evidence[:20]
         ]
-        # 中文说明：详情页只传谱系摘要，原始长文本由 audit 接口按需查看。
         raw_lineage = candidate.get("growth_lineage") or []
         item["lineage_count"] = len(raw_lineage)
         item["lineage"] = [
@@ -110,25 +138,7 @@ def _compact_growth_detail(detail: dict) -> dict:
         compact_candidates.append(item)
     compact["candidates"] = compact_candidates
     compact["evidence_bindings"] = [
-        {
-            "asset_id": (row.get("evidence_metadata") or {}).get("asset_id") if isinstance(row.get("evidence_metadata"), dict) else None,
-            "source_type": str(row.get("source_type") or ""),
-            "source_title": str(row.get("source_title") or ""),
-            "source_url": str(row.get("source_url") or "") if str(row.get("source_type") or "").lower() == "image" else "",
-            "image_url": str(row.get("source_url") or "") if str(row.get("source_type") or "").lower() == "image" else "",
-            "evidence_score": row.get("evidence_score"),
-            "evidence_content": str(row.get("evidence_content") or "")[:240],
-        }
-        for row in (detail.get("evidence_bindings") or [])[:200]
-    ]
-    compact["evidence_bindings"] = [
-        {
-            "source_type": str(row.get("source_type") or ""),
-            "source_title": str(row.get("source_title") or ""),
-            "source_url": str(row.get("source_url") or "") if str(row.get("source_type") or "").lower() == "image" else "",
-            "evidence_score": row.get("evidence_score"),
-            "evidence_content": str(row.get("evidence_content") or "")[:240],
-        }
+        _compact_evidence_row(row, content_limit=240)
         for row in (detail.get("evidence_bindings") or [])[:200]
     ]
     compact["graph"] = {key: value for key, value in (detail.get("graph") or {}).items() if key != "values"}

@@ -45,3 +45,28 @@ def test_compact_detail_preserves_claim_identity_and_lineage_summary():
         "support_role": "SUPPORTS",
         "evidence_score": 0.88,
     }]
+
+
+def test_compact_detail_keeps_image_binding_provenance():
+    """图片证据投影不得丢失原图地址和 OCR 定位信息。"""
+    detail = {
+        "candidates": [],
+        "evidence_bindings": [{
+            "source_type": "image_asset",
+            "source_title": "寺庙照片",
+            "source_url": "https://example.test/a.jpg",
+            "evidence_content": "图片中的牌匾",
+            "evidence_metadata": {
+                "asset_id": 9,
+                "page_no": 2,
+                "ocr_raw_text": "魁星楼",
+                "ocr_blocks": [{"text": "魁星楼", "bbox": [1, 2, 3, 4]}],
+            },
+        }],
+        "graph": {},
+    }
+    row = _compact_growth_detail(detail)["evidence_bindings"][0]
+    assert row["asset_id"] == 9
+    assert row["image_url"] == "https://example.test/a.jpg"
+    assert row["page_no"] == 2
+    assert row["ocr_blocks"][0]["bbox"] == [1, 2, 3, 4]
