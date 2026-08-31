@@ -223,9 +223,15 @@ async def semantic_candidates(
     status: str | None = Query(default=None),
     risk_level: str | None = Query(default=None),
     publication_policy: str | None = Query(default=None),
+    discovery_track: str | None = Query(default=None, description="审核业务链：TARGETED_COMPLETION/OPEN_DISCOVERY/ASSET_BINDING"),
+    candidate_kind: str | None = Query(default=None, description="候选类型：PROPERTY/RELATION/NODE/ASSET_BINDING/CONFLICT"),
+    review_surface: str | None = Query(default=None, description="审核页面：NODE_WORKBENCH/GROWTH_RUN/AUDIT_ONLY"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
+    # 中文说明：节点工作台默认只看定向补全，避免 GrowthRun 候选混入审核池。
+    if source_node_id and discovery_track is None:
+        discovery_track = "TARGETED_COMPLETION"
     try:
         return list_semantic_candidates(
             source_scenic_id=source_scenic_id,
@@ -235,6 +241,9 @@ async def semantic_candidates(
             status=status,
             risk_level=risk_level,
             publication_policy=publication_policy,
+            discovery_track=discovery_track,
+            candidate_kind=candidate_kind,
+            review_surface=review_surface,
             limit=limit,
             offset=offset,
         )
@@ -251,9 +260,16 @@ async def semantic_candidate_groups(
     job_id: int | None = Query(default=None),
     gap_status: str | None = Query(default=None),
     conflict_class: str | None = Query(default=None),
+    discovery_track: str | None = Query(default=None, description="审核业务链：TARGETED_COMPLETION/OPEN_DISCOVERY/ASSET_BINDING"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
+    """返回候选分组并隔离节点工作台与 GrowthRun 审核面。
+
+    调用：A 端节点语义补全分组页面。
+    """
+    if source_node_id and discovery_track is None:
+        discovery_track = "TARGETED_COMPLETION"
     try:
         return list_semantic_candidate_groups(
             source_scenic_id=source_scenic_id,
@@ -262,6 +278,7 @@ async def semantic_candidate_groups(
             job_id=job_id,
             gap_status=gap_status,
             conflict_class=conflict_class,
+            discovery_track=discovery_track,
             limit=limit,
             offset=offset,
         )

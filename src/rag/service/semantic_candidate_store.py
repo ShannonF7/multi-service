@@ -17,6 +17,7 @@ from src.rag.schemas import CandidateClaim, ClaimConflict, SemanticCompleteReque
 from src.rag.service.value_normalization_service import canonical_predicate
 from src.rag.service.source_independence_service import source_independence_key
 from src.rag.service.claim_evidence_fusion_service import TRUST_VERSION, fuse_evidence, semantic_trust_score
+from src.rag.service.candidate_projection_service import classification_sql
 from src.rag.service.conflict_classification_service import (
     classify_candidate_group,
     is_exclusive_relation,
@@ -903,11 +904,24 @@ def list_semantic_candidates(
     publication_policy: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    discovery_track: str | None = None,
+    candidate_kind: str | None = None,
+    review_surface: str | None = None,
 ) -> dict[str, Any]:
+    """按业务链过滤候选并返回去重结果。
+
+    输入：领域、节点、任务和审核分类过滤条件。输出：候选列表及总数。
+    调用：节点语义工作台和 GrowthRun 详情的后端查询入口。
+    """
     limit = max(1, min(int(limit or 100), 500))
     offset = max(0, int(offset or 0))
     where = []
     params: dict[str, Any] = {"limit": limit, "offset": offset}
+    # 中文说明：分类表达式在数据库侧计算，避免前端获取混合候选后再猜测来源。
+    projection = classification_sql()
+    track_expr = projection["discovery_track"]
+    kind_expr = projection["candidate_kind"]
+    surface_expr = projection["review_surface"]
     if source_scenic_id:
         where.append("source_scenic_id = :source_scenic_id")
         params["source_scenic_id"] = str(source_scenic_id)
@@ -929,6 +943,15 @@ def list_semantic_candidates(
     if publication_policy:
         where.append("publication_policy = :publication_policy")
         params["publication_policy"] = str(publication_policy).upper()
+    if discovery_track:
+        where.append(f"({track_expr}) = :discovery_track")
+        params["discovery_track"] = str(discovery_track).upper()
+    if candidate_kind:
+        where.append(f"({kind_expr}) = :candidate_kind")
+        params["candidate_kind"] = str(candidate_kind).upper()
+    if review_surface:
+        where.append(f"({surface_expr}) = :review_surface")
+        params["review_surface"] = str(review_surface).upper()
     where_sql = " where " + " and ".join(where) if where else ""
     # The same source can emit the same semantic claim more than once (for
     # example one raw extraction and one normalized extraction).  The review
@@ -964,10 +987,13 @@ def list_semantic_candidates(
     """.format(identity_partition=identity_partition)
     ranked_sql = ranked_from + where_sql
     columns = """
+        (""" + track_expr + """) as discovery_track,
+        (""" + kind_expr + """) as candidate_kind,
+        (""" + surface_expr + """) as review_surface,
         id, candidate_uid, trace_id, run_id, source_scenic_id, source_node_id,
         subject_name, subject_type, graph_scope, retrieval_source,
         claim_id, claim_type, candidate_type, predicate, object_value,
-        object_name, object_type, source_id, source_title, source_url, quote,
+        object_name, object_type, source_id, source_title, source_url, quote, update_operation,
         confidence, evidence_score, evidence_status, status,
         job_id, question_id, evidence_ids, recommend_score, support_status,
         candidate_group_key, value_group_key, conflict_class, gap_status,
@@ -1003,9 +1029,15 @@ def list_semantic_candidate_groups(
     job_id: int | None = None,
     gap_status: str | None = None,
     conflict_class: str | None = None,
+    discovery_track: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """按业务链过滤候选分组。
+
+    输入：领域、节点、任务、补全来源和冲突过滤条件。输出：分组列表及总数。
+    调用：节点语义工作台的分组接口；GrowthRun 使用独立详情审核面。
+    """
     limit = max(1, min(int(limit or 100), 500))
     offset = max(0, int(offset or 0))
     where = []
@@ -1028,6 +1060,13 @@ def list_semantic_candidate_groups(
     if conflict_class:
         where.append("conflict_class = :conflict_class")
         params["conflict_class"] = str(conflict_class)
+    # 分组表保留问题/任务来源字段；节点工作台默认只允许定向补全分组。
+    if discovery_track:
+        normalized_track = str(discovery_track).upper()
+        if normalized_track == "TARGETED_COMPLETION":
+            where.append("(question_id is not null or job_id is not null)")
+        elif normalized_track == "OPEN_DISCOVERY":
+            where.append("question_id is null and job_id is null")
     where_sql = " where " + " and ".join(where) if where else ""
     with ai_session_scope() as db:
         apply_semantic_candidate_schema(db)
