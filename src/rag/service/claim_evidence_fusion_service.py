@@ -91,10 +91,11 @@ def fuse_evidence(
     *,
     weights: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """Collapse chunks within a source group, then fuse independent groups.
+    """按来源族去重后融合证据支持度。
 
-    The first version intentionally uses the strongest support per source
-    group. This prevents chunk count from acting as a proxy for confidence.
+    输入：同一 CanonicalClaim 的证据绑定；输出：来源族数量、支持度和可信度分量。
+    同一来源族只取最高支持度；不同独立来源使用 noisy-OR 累积，避免重复
+    chunk 虚增，同时让真正独立的来源提升事实支持。
     """
     groups: dict[str, list[float]] = defaultdict(list)
     enriched: list[dict[str, Any]] = []
@@ -109,7 +110,12 @@ def fuse_evidence(
             )
         score = evidence_support_score(item, weights)
         item["evidence_support_score"] = score
-        source_key = str(item.get("source_independence_key") or item.get("source_key") or "unknown")
+        source_key = str(
+            item.get("source_independence_key")
+            or item.get("source_family_id")
+            or item.get("source_key")
+            or f"binding:{len(enriched)}"
+        )
         groups[source_key].append(score)
         enriched.append(item)
     source_group_scores = {key: max(scores) for key, scores in groups.items()}
@@ -124,7 +130,11 @@ def fuse_evidence(
         (_clamp(item.get("source_quality")) for item in enriched),
         default=0.0,
     )
-    fused = sum(scores) / len(scores) if scores else 0.0
+    # noisy-OR：独立来源逐步增强支持度，同一来源族已在上面折叠。
+    residual = 1.0
+    for score in scores:
+        residual *= 1.0 - _clamp(score)
+    fused = 1.0 - residual if scores else 0.0
     cross_source = min(1.0, source_count / 3.0)
     if len(source_types) > 1:
         cross_source = min(1.0, cross_source + 0.1)

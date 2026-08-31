@@ -30,3 +30,36 @@ def test_fusion_collapses_chunks_in_one_source_group():
     assert result["evidence_count"] == 3
     assert result["independent_source_count"] == 2
     assert result["cross_source_support"] > 0.3333
+
+
+def test_independent_source_groups_use_noisy_or():
+    """独立来源应增强支持度，同来源重复 chunk 不应增强。"""
+    one = fuse_evidence(
+        [{"source_independence_key": "document:1", "source_quality": 0.5}],
+        weights={"source_quality": 1.0},
+    )
+    duplicate = fuse_evidence(
+        [
+            {"source_independence_key": "document:1", "source_quality": 0.5},
+            {"source_independence_key": "document:1", "source_quality": 0.5},
+        ],
+        weights={"source_quality": 1.0},
+    )
+    independent = fuse_evidence(
+        [
+            {"source_independence_key": "document:1", "source_quality": 0.5},
+            {"source_independence_key": "document:2", "source_quality": 0.5},
+        ],
+        weights={"source_quality": 1.0},
+    )
+    assert duplicate["evidence_support_score"] == one["evidence_support_score"] == 0.5
+    assert independent["evidence_support_score"] == 0.75
+
+
+def test_missing_source_keys_do_not_merge_unrelated_bindings():
+    """缺少来源键时按绑定序号隔离，避免错误合并为 unknown。"""
+    result = fuse_evidence(
+        [{"source_quality": 0.4}, {"source_quality": 0.6}],
+        weights={"source_quality": 1.0},
+    )
+    assert result["independent_source_count"] == 2
