@@ -256,9 +256,9 @@ def claim_evidence_batch(
                     where kc.source_scenic_id = a.source_scenic_id
                       and kc.source_type = 'domain_kb'
                       and kc.source_id = a.metadata->>'doc_id'
+                      and a.metadata->>'page_no' is not null
                       and (
-                          a.metadata->>'page_no' is null
-                          or kc.metadata->>'page_no' = a.metadata->>'page_no'
+                          kc.metadata->>'page_no' = a.metadata->>'page_no'
                           or kc.metadata->>'chunk_index' = a.metadata->>'page_no'
                       )
                     order by kc.id asc
