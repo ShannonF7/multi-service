@@ -86,3 +86,14 @@ def test_prepare_image_ocr_respects_zero_limit(monkeypatch):
     )
     growth_evidence._prepare_image_ocr("4", 0)
     assert calls == []
+
+
+def test_parse_accepts_numpy_boxes():
+    """NumPy 框数组不得因布尔判断而解析失败。"""
+    np = __import__("numpy")
+    result = _parse({
+        "rec_texts": ["牌匾"],
+        "rec_scores": [0.9],
+        "rec_boxes": np.array([[1, 2, 3, 4]]),
+    })
+    assert result["ocr_blocks"][0]["bbox"] == [1.0, 2.0, 3.0, 4.0]

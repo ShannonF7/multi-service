@@ -119,7 +119,12 @@ def _parse(result: Any) -> dict[str, Any]:
         return {"ocr_text": "", "ocr_raw_text": "", "ocr_blocks": [], "max_score": 0.0, "status": "no_text", "model": "paddleocr"}
     texts = list(page.get("rec_texts") or [])
     scores = list(page.get("rec_scores") or [])
-    boxes = list(page.get("rec_boxes") or page.get("dt_polys") or page.get("rec_polys") or [])
+    boxes_value = page.get("rec_boxes")
+    if boxes_value is None:
+        boxes_value = page.get("dt_polys")
+    if boxes_value is None:
+        boxes_value = page.get("rec_polys")
+    boxes = list(boxes_value) if boxes_value is not None else []
     raw_texts: list[str] = []
     kept: list[str] = []
     kept_scores: list[float] = []
