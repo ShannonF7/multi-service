@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.rag.dependencies import ai_session_scope
+from src.rag.service.asset_binding_service import validate_asset_binding_target
 
 RAG_DIR = Path(__file__).resolve().parents[1]
 MIGRATION_FILE = RAG_DIR / "migrations" / "20260626_sync_claims.sql"
@@ -338,16 +339,35 @@ def _upsert_edges(db: Session, scenic_id: int, source_scenic_id: str, relations:
     return count
 
 
-def _upsert_assets(db: Session, scenic_id: int, source_scenic_id: str, payload: Dict[str, Any], sync_version: str) -> int:
+def _upsert_assets(
+    db: Session,
+    scenic_id: int,
+    source_scenic_id: str,
+    payload: Dict[str, Any],
+    sync_version: str,
+    diagnostics: Optional[List[Dict[str, Any]]] = None,
+) -> int:
+    """将图片资产绑定写入 node_assets，并拒绝不存在的目标节点。
+
+    输入：数据库会话、目标景区 ID、来源景区 ID、同步载荷和版本号。
+    输出：实际写入或更新的绑定数量。无效绑定不会写入，并汇总到 diagnostics。
+    调用位置：sync_scenic_service 的结构化同步阶段；不参与语义补全抽取。
+    """
     assets = {str(a.get("source_asset_id")): a for a in payload.get("image_assets") or [] if a.get("source_asset_id") is not None}
+    existing_node_rows = db.execute(
+        text("select source_node_id from semantic_nodes where scenic_id=:scenic_id"),
+        {"scenic_id": scenic_id},
+    ).fetchall()
+    existing_node_ids = {str(row[0]).strip() for row in existing_node_rows if row[0] is not None and str(row[0]).strip()}
     count = 0
+    rejected: list[dict[str, Any]] = []
     for binding in payload.get("image_bindings") or []:
-        if binding.get("object_type") not in (None, "node"):
+        guard = validate_asset_binding_target(binding, existing_node_ids)
+        if not guard["allowed"]:
+            rejected.append(guard)
             continue
-        source_asset_id = _sid(binding.get("source_asset_id"))
-        source_node_id = _sid(binding.get("source_node_id"))
-        if not (source_asset_id and source_node_id):
-            continue
+        source_asset_id = guard["asset_id"]
+        source_node_id = guard["target_node_id"]
         source_binding_id = _sid(binding.get("source_binding_id"))
         asset = assets.get(source_asset_id, {})
         metadata = dict(asset.get("metadata") or {})
@@ -390,6 +410,13 @@ def _upsert_assets(db: Session, scenic_id: int, source_scenic_id: str, payload: 
                 )
             """), params)
         count += 1
+    if rejected and diagnostics is not None:
+        diagnostics.append({
+            "code": "IMAGE_BINDING_REJECTED",
+            "message": "图片绑定目标不是当前景区已存在的正式节点，已跳过写入",
+            "count": len(rejected),
+            "reasons": sorted({item["reason"] for item in rejected}),
+        })
     return count
 
 
@@ -415,7 +442,7 @@ async def sync_scenic_service(request: Any) -> Dict[str, Any]:
             _set_job_status(db, job_id=job_id, status="PROCESSING", current_step="upsert_relations")
             upserted_edges = _upsert_edges(db, scenic_id, source_scenic_id, payload.get("relations") or [], sync_version)
             _set_job_status(db, job_id=job_id, status="PROCESSING", current_step="upsert_assets")
-            upserted_assets = _upsert_assets(db, scenic_id, source_scenic_id, payload, sync_version)
+            upserted_assets = _upsert_assets(db, scenic_id, source_scenic_id, payload, sync_version, diagnostics)
             counts.update({"upserted_nodes": upserted_nodes, "upserted_properties": upserted_props, "upserted_relations": upserted_edges, "upserted_assets": upserted_assets})
             _set_job_status(db, job_id=job_id, status="SUCCESS", current_step="structured_sync_completed", counts=counts, diagnostics=diagnostics, finish=True)
             _record_event(db, job_id=job_id, event_type="completed", step="structured_sync_completed", message="structured sync completed", payload=counts)
