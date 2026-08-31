@@ -1,4 +1,9 @@
-"""Explainable evidence support fusion shared by completion and growth."""
+"""补全与自增长共用的可解释证据支持度融合服务。
+
+本模块只负责把同一 CanonicalClaim 的证据绑定按来源族去重并融合，输入来自
+补全链或自增长链，输出供候选审核、发布审计和 GrowthRun 统计使用；不负责抽取、
+候选状态流转或正式事实发布。
+"""
 
 from __future__ import annotations
 
@@ -33,10 +38,11 @@ def _compact_text(value: Any) -> str:
 def lexical_entailment_baseline(
     evidence_text: Any, *, subject: Any = None, predicate: Any = None, value: Any = None
 ) -> float | None:
-    """Conservative, explainable entailment baseline for extracted claims.
+    """计算词面蕴含基线分数。
 
-    This is not an NLI model: it only rewards explicit lexical support and
-    keeps the score low when the claimed value is absent from the evidence.
+    输入：证据原文，以及可选的主体、谓词、值；输出：0~1 的可解释支持度，
+    空证据返回 None。调用方是 fuse_evidence，该函数不是 NLI 模型，
+    只用于在原文显式出现声明内容时提高分数，不能替代后续语义校验。
     """
     text = _compact_text(evidence_text)
     if not text:
@@ -56,6 +62,11 @@ def lexical_entailment_baseline(
 def evidence_support_score(
     evidence: dict[str, Any], weights: dict[str, float] | None = None
 ) -> float:
+    """按可解释分量计算单条证据支持度。
+
+    输入：证据分量字典和可选权重；输出：0~1 的支持度。缺失分量不参与分母，
+    因此不会因字段缺失而隐式降低分数；调用方为 fuse_evidence。
+    """
     weights = weights or DEFAULT_WEIGHTS
     numerator = 0.0
     denominator = 0.0
@@ -73,7 +84,11 @@ def semantic_trust_score(
     entity_resolution_confidence: Any = 0.0,
     conflict_risk: Any = 0.0,
 ) -> float:
-    """Compute the shared claim trust score from explainable components."""
+    """根据融合结果计算统一的事实可信度。
+
+    输入：fuse_evidence 返回的融合结果，以及实体消歧置信度、冲突风险；
+    输出：0~1 的派生可信度。该函数只计算分数，不写数据库，也不改变候选状态。
+    """
     entity_score = _clamp(entity_resolution_confidence)
     risk = _clamp(conflict_risk)
     score = (
