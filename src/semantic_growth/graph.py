@@ -52,6 +52,29 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
+def _restrict_scope_to_seed_nodes(
+    nodes: list[dict[str, Any]],
+    seed_node_ids: list[Any] | None,
+) -> list[dict[str, Any]]:
+    """按发布后的受影响节点缩小下一轮工作范围。
+
+    输入：已加载的正式节点列表，以及上一轮发布产生的 seed_node_ids。
+    输出：只保留 source/node_id 命中的节点；没有种子时原样返回。
+    该函数不修改数据库，也不影响证据游标和旧补全链。
+    """
+    seeds = {
+        str(node_id).strip()
+        for node_id in (seed_node_ids or [])
+        if node_id is not None and str(node_id).strip()
+    }
+    if not seeds:
+        return nodes
+    return [
+        node for node in nodes
+        if str(node.get("node_id") or node.get("source_node_id") or "").strip() in seeds
+    ]
+
+
 # ═══════════════════════════════════════════════════════════
 # Node: load_scope
 # ═══════════════════════════════════════════════════════════
@@ -97,10 +120,20 @@ def load_scope(state: GrowthState) -> dict[str, Any]:
             if row.get("source_node_id")
         ]
 
-    record_step(growth_run_id, "load_scope_done", {"node_count": len(nodes), "source": "neo4j_or_semantic_nodes"})
+    scoped_nodes = _restrict_scope_to_seed_nodes(nodes, state.get("seed_node_ids"))
+    record_step(
+        growth_run_id,
+        "load_scope_done",
+        {
+            "node_count": len(scoped_nodes),
+            "unscoped_node_count": len(nodes),
+            "seed_node_count": len(state.get("seed_node_ids") or []),
+            "source": "neo4j_or_semantic_nodes",
+        },
+    )
 
     return {
-        "published_nodes": nodes,
+        "published_nodes": scoped_nodes,
         "iteration": state.get("iteration", 0) + 1,
         "review_status": "not_required",
     }
