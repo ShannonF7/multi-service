@@ -91,17 +91,47 @@ def create_run(payload: dict[str, Any]) -> dict[str, Any]:
     return dict(row)
 
 
+def _normalize_affected_node_ids(
+    affected_scope: list[dict[str, Any]] | None,
+    explicit_ids: list[Any] | None = None,
+) -> list[str]:
+    """从发布载荷提取稳定、去重后的受影响正式节点 ID。
+
+    输入：affected_scope 展开项，以及发布方可选的显式 affected_node_ids。
+    输出：按首次出现顺序保留的字符串 ID 列表；显式列表为空时从 scope 的
+    node_id/source_node_id 字段回退提取。该函数不访问数据库。
+    """
+    values = explicit_ids if isinstance(explicit_ids, list) and explicit_ids else []
+    if not values:
+        values = [
+            item.get("node_id") or item.get("source_node_id")
+            for item in (affected_scope or [])
+            if isinstance(item, dict)
+        ]
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
 def update_publication_sync_status(
     publication_batch_id: str,
     *,
     status: str,
     error: str | None = None,
     affected_scope: list[dict[str, Any]] | None = None,
+    affected_node_ids: list[Any] | None = None,
 ) -> dict[str, Any] | None:
     ensure_schema()
     normalized = str(status or "").strip().upper()
     if normalized not in {"GRAPH_SYNC_PENDING", "PUBLISHED", "GRAPH_SYNC_FAILED"}:
         raise ValueError("invalid publication sync status")
+    normalized_scope = affected_scope if isinstance(affected_scope, list) else None
+    normalized_node_ids = _normalize_affected_node_ids(normalized_scope, affected_node_ids)
     with ai_session_scope() as db:
         row = db.execute(
             text(
@@ -111,6 +141,8 @@ def update_publication_sync_status(
                     error=:error,
                     affected_scope=case when :affected_scope is not null
                         then cast(:affected_scope as jsonb) else affected_scope end,
+                    affected_node_ids=case when :affected_node_ids is not null
+                        then cast(:affected_node_ids as jsonb) else affected_node_ids end,
                     updated_at=now(),
                     published_at=case when :status='PUBLISHED' then now() else published_at end
                 where publication_batch_id=:publication_batch_id
@@ -121,7 +153,8 @@ def update_publication_sync_status(
                 "publication_batch_id": str(publication_batch_id),
                 "status": normalized,
                 "error": str(error or "")[:4000] or None,
-                "affected_scope": _json(affected_scope) if isinstance(affected_scope, list) else None,
+                "affected_scope": _json(normalized_scope) if normalized_scope is not None else None,
+                "affected_node_ids": _json(normalized_node_ids) if normalized_node_ids else None,
             },
         ).mappings().first()
     return dict(row) if row else None
@@ -137,12 +170,17 @@ def record_publication_result(growth_run_id: str, payload: dict[str, Any]) -> di
         status = "SYNC_PENDING" if warning else ("PUBLISHED" if int(payload.get("published") or 0) else "NOT_REQUIRED")
     candidate_ids = [int(value) for value in (payload.get("candidate_ids") or []) if str(value).isdigit()]
     affected_scope = payload.get("affected_scope") if isinstance(payload.get("affected_scope"), list) else []
+    affected_node_ids = _normalize_affected_node_ids(
+        affected_scope,
+        payload.get("affected_node_ids") if isinstance(payload.get("affected_node_ids"), list) else None,
+    )
     params = {
         "growth_run_id": str(growth_run_id),
         "publication_batch_id": str(payload.get("batch_id") or "") or None,
         "status": status,
         "candidate_ids": _json(candidate_ids),
         "affected_scope": _json(affected_scope),
+        "affected_node_ids": _json(affected_node_ids),
         "published_candidate_count": int(payload.get("published") or 0),
         "warning": warning,
         "error": error,
@@ -153,12 +191,13 @@ def record_publication_result(growth_run_id: str, payload: dict[str, Any]) -> di
                 """
                 insert into semantic_growth_publication_records (
                     growth_run_id, publication_batch_id, status, candidate_ids,
-                    affected_scope, published_candidate_count, warning, error,
+                    affected_scope, affected_node_ids, published_candidate_count, warning, error,
                     attempt_count, published_at, updated_at
                 ) values (
                     :growth_run_id, :publication_batch_id, :status,
                     cast(:candidate_ids as jsonb), cast(:affected_scope as jsonb),
-                    :published_candidate_count, :warning, :error, 1,
+                    cast(:affected_node_ids as jsonb), :published_candidate_count,
+                    :warning, :error, 1,
                     case when :status='PUBLISHED' then now() else null end, now()
                 )
                 on conflict (growth_run_id) do update set
@@ -166,6 +205,7 @@ def record_publication_result(growth_run_id: str, payload: dict[str, Any]) -> di
                     status=excluded.status,
                     candidate_ids=excluded.candidate_ids,
                     affected_scope=excluded.affected_scope,
+                    affected_node_ids=excluded.affected_node_ids,
                     published_candidate_count=excluded.published_candidate_count,
                     warning=excluded.warning,
                     error=excluded.error,
@@ -177,6 +217,21 @@ def record_publication_result(growth_run_id: str, payload: dict[str, Any]) -> di
             ),
             params,
         ).mappings().one()
+        db.execute(
+            text("""
+                update semantic_growth_runs
+                set metadata=coalesce(metadata, '{}'::jsonb) || cast(:patch as jsonb),
+                    updated_at=now()
+                where growth_run_id=:growth_run_id
+            """),
+            {
+                "growth_run_id": str(growth_run_id),
+                "patch": _json({
+                    "g6_affected_node_ids": affected_node_ids,
+                    "g6_publication_status": status,
+                }),
+            },
+        )
     return dict(row)
 
 

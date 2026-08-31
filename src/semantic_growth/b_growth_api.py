@@ -165,6 +165,7 @@ def update_growth_publication_sync(payload: dict = Body(default={})):
             status=str(payload.get("status") or ""),
             error=str(payload.get("error") or ""),
             affected_scope=payload.get("affected_scope") if isinstance(payload.get("affected_scope"), list) else None,
+            affected_node_ids=payload.get("affected_node_ids") if isinstance(payload.get("affected_node_ids"), list) else None,
         )
         if result is None:
             raise HTTPException(status_code=404, detail="publication record not found")
@@ -193,6 +194,10 @@ def complete_growth_round(growth_run_id: str, payload: dict = Body(default={})):
         if isinstance(publication, dict):
             publication_payload = dict(publication)
             publication_payload.setdefault("affected_scope", detail.get("affected_scope") or [])
+            publication_payload.setdefault(
+                "affected_node_ids",
+                [item.get("node_id") for item in publication_payload.get("affected_scope") or [] if isinstance(item, dict) and item.get("node_id")],
+            )
             publication_record = record_publication_result(growth_run_id, publication_payload)
         result = resume_growth_run(
             growth_run_id,
