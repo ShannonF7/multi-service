@@ -278,8 +278,22 @@ def _vector_entity_recall(
 
     输入：领域 ID、实体提及、正式节点和 Top-K/上下文参数。输出：节点候选及向量、重排、上下文分数。由 ``_resolve_name`` 调用，结果只参与决策。
     """
-    if not query or not rows:
+    if not query:
         return []
+    image_candidates: list[dict[str, Any]] = []
+    if image_asset_id is not None:
+        try:
+            from src.rag.service.image_embedding_service import recall_image_asset_nodes
+
+            image_candidates = recall_image_asset_nodes(
+                source_scenic_id,
+                int(image_asset_id),
+                limit=max(1, int(limit)),
+            )
+        except Exception as exc:
+            logger.info("image vector entity recall skipped: %s", exc)
+    if not rows:
+        return image_candidates[: max(1, int(limit))]
     try:
         from src.rag.service.embedding_service import embed_texts
         import numpy as np
@@ -315,22 +329,8 @@ def _vector_entity_recall(
         for item in scored:
             item["recall_method"] = "TEXT_VECTOR_RECALL"
             item["recall_methods"] = ["TEXT_VECTOR_RECALL"]
-        recall_candidates = list(scored)
-        if image_asset_id is not None:
-            try:
-                from src.rag.service.image_embedding_service import recall_image_asset_nodes
-
-                recall_candidates.extend(
-                    recall_image_asset_nodes(
-                        source_scenic_id,
-                        int(image_asset_id),
-                        limit=max(1, int(limit)),
-                    )
-                )
-            except Exception as exc:
-                logger.info("image vector entity recall skipped: %s", exc)
         combined = _merge_entity_recall_candidates(
-            recall_candidates,
+            [*scored, *image_candidates],
             limit=max(1, int(limit) * 2),
         )
         reranked = _rerank_entity_candidates(
@@ -342,6 +342,13 @@ def _vector_entity_recall(
         return reranked[: max(1, int(limit))]
     except Exception as exc:
         logger.warning("G3 entity vector recall skipped for %s: %s", source_scenic_id, exc)
+        if image_candidates:
+            return _rerank_entity_candidates(
+                query,
+                image_candidates[: max(1, int(limit))],
+                raw_type=raw_type,
+                context_node_id=context_node_id,
+            )[: max(1, int(limit))]
         return []
 
 
