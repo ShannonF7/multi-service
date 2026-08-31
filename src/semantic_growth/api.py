@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
+from src.rag.service.candidate_projection_service import project_candidate
 from src.rag.service.semantic_candidate_store import (
     update_semantic_candidate_status,
     update_semantic_candidate_status_batch,
@@ -51,6 +52,9 @@ def _compact_growth_detail(detail: dict) -> dict:
     compact = dict(detail)
     compact_candidates = []
     for candidate in detail.get("candidates") or []:
+        # 中文说明：GrowthRun 详情只展示本轮候选，并附加统一审核分类；
+        # 分类来自后端投影器，前端不再根据 candidate_type 自行猜测。
+        candidate = project_candidate(candidate)
         item = {
             key: candidate.get(key)
             for key in (
@@ -63,6 +67,8 @@ def _compact_growth_detail(detail: dict) -> dict:
                 "update_operation", "entity_resolution_status", "target_node_id",
                 "target_node_candidate_id", "raw_type", "suggested_type",
                 "type_confidence", "independent_source_count",
+                "canonical_claim_key", "conflict_scope_key", "aggregation_key",
+                "discovery_track", "candidate_kind", "review_surface", "origin_ref",
             )
             if candidate.get(key) is not None
         }
@@ -88,8 +94,19 @@ def _compact_growth_detail(detail: dict) -> dict:
             }
             for row in raw_growth_evidence[:20]
         ]
-        item["lineage_count"] = len(item.get("growth_lineage") or [])
-        item["growth_lineage"] = []
+        # 中文说明：详情页只传谱系摘要，原始长文本由 audit 接口按需查看。
+        raw_lineage = candidate.get("growth_lineage") or []
+        item["lineage_count"] = len(raw_lineage)
+        item["lineage"] = [
+            {
+                "raw_claim_id": row.get("raw_claim_id"),
+                "evidence_unit_id": row.get("evidence_unit_id"),
+                "source_independence_key": row.get("source_independence_key"),
+                "support_role": row.get("support_role"),
+                "evidence_score": row.get("evidence_score"),
+            }
+            for row in raw_lineage[:50]
+        ]
         compact_candidates.append(item)
     compact["candidates"] = compact_candidates
     compact["evidence_bindings"] = [
