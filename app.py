@@ -6,6 +6,7 @@ import json
 import importlib.util
 from pathlib import Path
 from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -27,6 +28,8 @@ from src.rag.sync_router import router as rag_sync_router
 from src.rag.semantic_router import router as rag_semantic_router
 from src.rag.graph_router import router as rag_graph_router
 from src.semantic_growth.api import router as semantic_growth_router
+from src.kg_qa.api import router as kg_qa_router
+from src.kg_qa_v2.router import router as kg_qa_v2_router
 
 # Logging
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
@@ -54,43 +57,72 @@ async def startup_event():
     get_feature_extractor()
     logger.info("Feature Extractor Model Initialized.")
 
-# 1. Global Exception Handlers
+# 1. 全局异常处理
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    # Map HTTP status codes to custom ErrorCode if possible, or use generic logic
-    custom_code = exc.status_code
-    if exc.status_code == 400:
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """把 HTTP 异常转换为统一响应结构。
+
+    输入：当前请求和包含 HTTP 状态码、错误详情的 HTTPException。
+    输出：保留原 HTTP 状态码，并返回自定义业务错误码组成的 JSONResponse。
+    逻辑：将已知状态码映射到错误码；其他 4xx 归为业务错误，5xx 归为服务器错误。
+    """
+    status_code: int = exc.status_code
+    custom_code: int = ErrorCode.INTERNAL_ERROR.value
+    if status_code in {400, 413, 415, 422}:
         custom_code = ErrorCode.PARAM_ERROR.value
-    elif exc.status_code == 401:
+    elif status_code == 401:
         custom_code = ErrorCode.UNAUTHORIZED.value
-    elif exc.status_code == 403:
+    elif status_code == 403:
         custom_code = ErrorCode.FORBIDDEN.value
-    elif exc.status_code == 404:
+    elif status_code == 404:
         custom_code = ErrorCode.NOT_FOUND.value
-    elif exc.status_code == 500:
-        custom_code = ErrorCode.INTERNAL_ERROR.value
-    
-    
-    return JSONResponse(
-        status_code=exc.status_code, # HTTP status code remains standard
-        content=BaseResponse(
-            code=custom_code,
-            message=exc.detail,
-            data=None
-        ).dict()
+    elif 400 <= status_code < 500:
+        custom_code = ErrorCode.BUSINESS_ERROR.value
+
+    message: str = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    response: BaseResponse[None] = BaseResponse[None](
+        code=custom_code,
+        message=message,
+        data=None,
     )
+    return JSONResponse(status_code=status_code, content=response.model_dump())
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """把 FastAPI 请求参数校验异常转换为统一响应结构。
+
+    输入：当前请求和包含字段校验详情的 RequestValidationError。
+    输出：HTTP 422 响应，业务 code 为 40001，data 为 null。
+    逻辑：隐藏原始输入值和内部校验细节，使用统一的参数错误说明。
+    """
+    response: BaseResponse[None] = BaseResponse[None](
+        code=ErrorCode.PARAM_ERROR.value,
+        message="参数校验失败",
+        data=None,
+    )
+    return JSONResponse(status_code=422, content=response.model_dump())
+
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """兜底处理未捕获异常并返回统一服务器错误响应。
+
+    输入：当前请求和未被其他处理器捕获的异常。
+    输出：HTTP 500 响应，业务 code 为 50000；调试模式附带异常文本。
+    逻辑：记录异常堆栈，并按统一响应模型返回错误信息。
+    """
     logger.error(f"Global Exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content=BaseResponse(
-            code=ErrorCode.INTERNAL_ERROR.value,
-            message="Internal Server Error",
-            data=str(exc) if os.getenv("DEBUG") else None
-        ).dict()
+    error_detail: str | None = str(exc) if os.getenv("DEBUG") else None
+    response: BaseResponse[None] = BaseResponse[None](
+        code=ErrorCode.INTERNAL_ERROR.value,
+        message="服务器内部错误",
+        data=error_detail,
     )
+    return JSONResponse(status_code=500, content=response.model_dump())
 
 # 2. Security Middleware (Imported from src.core.security)
 # app.add_middleware(SecurityMiddleware) is called below
@@ -121,6 +153,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 request.url.path.endswith("/chat/test") or
                 request.url.path.endswith("/npc/chat/stream_with_prompt/") or
                 request.url.path.endswith("/npc/chat/stream_with_prompt")
+                or request.url.path.endswith("/kg-qa/stream")
+                or request.url.path.endswith("/kg-qa-v2/stream")
             ):
                 request_body_content = "<Streaming Request Body Skipped>"
             else:
@@ -206,6 +240,8 @@ app.include_router(rag_sync_router, tags=["A端一键入库 / RAG Sync"])
 app.include_router(rag_semantic_router, tags=["RAG Semantic Completion"])
 app.include_router(rag_graph_router, tags=["Published Graph Projection"])
 app.include_router(semantic_growth_router)
+app.include_router(kg_qa_router, tags=["KG-QA"])
+app.include_router(kg_qa_v2_router, tags=["KG-QA v2"])
 
 
 def _mount_420pro_app() -> None:
