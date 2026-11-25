@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import transformers.utils.generic as transformers_generic
 
-from src.multimodal.benchmark_adapters import ADAPTERS, EmbeddingAdapter
+from src.multimodal.scripts.benchmarks.benchmark_adapters import ADAPTERS, EmbeddingAdapter
 
 
 def _identity_decorator(function):

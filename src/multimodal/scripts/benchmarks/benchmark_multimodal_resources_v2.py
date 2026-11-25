@@ -13,8 +13,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from src.multimodal.benchmark_adapters import create_adapter
-from src.multimodal.simclr_backfill import DEFAULT_MEDIA_BASE_URL, fetch_image_to_cache
+from src.multimodal.scripts.benchmarks.benchmark_adapters import create_adapter
+from src.multimodal.scripts.retrieval.simclr_backfill import DEFAULT_MEDIA_BASE_URL, fetch_image_to_cache
 
 
 MODELS = {

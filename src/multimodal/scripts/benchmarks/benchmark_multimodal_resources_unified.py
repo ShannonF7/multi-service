@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from src.multimodal import benchmark_multimodal_resources_v2 as benchmark
-from src.multimodal.benchmark_adapters_native_v3 import create_native_adapter
+from src.multimodal.scripts.benchmarks import benchmark_multimodal_resources_v2 as benchmark
+from src.multimodal.scripts.benchmarks.benchmark_adapters_native_v3 import create_native_adapter
 ORIGINAL_RUN_MODEL = benchmark.run_model
 
 

@@ -7,7 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
-from src.multimodal.simclr_backfill import DEFAULT_MEDIA_BASE_URL, fetch_image_to_cache
+from src.multimodal.scripts.retrieval.simclr_backfill import DEFAULT_MEDIA_BASE_URL, fetch_image_to_cache
 
 
 def read_jsonl(path: Path):

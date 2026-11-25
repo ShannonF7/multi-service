@@ -24,7 +24,7 @@ from src.multimodal.node_aggregation import (
     dot,
     normalize,
 )
-from src.multimodal.simclr_backfill import DEFAULT_MEDIA_BASE_URL, fetch_image_to_cache
+from src.multimodal.scripts.retrieval.simclr_backfill import DEFAULT_MEDIA_BASE_URL, fetch_image_to_cache
 from src.rag.dependencies import get_ai_engine
 
 SETTING = "cross_domain_zero_shot"
